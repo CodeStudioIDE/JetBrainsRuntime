@@ -1537,12 +1537,7 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
 @end // AWTWindow
 
 @implementation AWTWindowDragView {
-    CGFloat _accumulatedDragDelta;
-    enum WindowDragState {
-        NO_DRAG,   // Mouse not dragging
-        SKIP_DRAG, // Mouse dragging in non-draggable area
-        DRAG,      // Mouse is dragging window
-    } _draggingWindow;
+    BOOL _dragging;
 }
 
 - (id) initWithPlatformWindow:(jobject)javaPlatformWindow {
@@ -1558,72 +1553,59 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
     return NO;
 }
 
-- (jint)hitTestCustomDecoration:(NSPoint)point
+- (BOOL)areCustomTitlebarNativeActionsAllowed
 {
-    jint returnValue = java_awt_Window_CustomWindowDecoration_NO_HIT_SPOT;
     JNIEnv *env = [ThreadUtilities getJNIEnvUncached];
+    GET_CPLATFORM_WINDOW_CLASS_RETURN(YES);
+    DECLARE_FIELD_RETURN(jf_target, jc_CPlatformWindow, "target", "Ljava/awt/Window;", YES);
+    DECLARE_CLASS_RETURN(jc_Frame, "java/awt/Frame", YES);
+    DECLARE_FIELD_RETURN(jf_allowCustomTitlebarNativeActions, jc_Frame, "allowCustomTitlebarNativeActions", "Z", YES);
+
     jobject platformWindow = (*env)->NewLocalRef(env, self.javaPlatformWindow);
-    if (platformWindow != NULL) {
-        GET_CPLATFORM_WINDOW_CLASS_RETURN(YES);
-        DECLARE_FIELD_RETURN(jf_target, jc_CPlatformWindow, "target", "Ljava/awt/Window;", YES);
-        DECLARE_CLASS_RETURN(jc_Window, "java/awt/Window", YES);
-        DECLARE_METHOD_RETURN(jm_hitTestCustomDecoration, jc_Window, "hitTestCustomDecoration", "(II)I", YES);
-        jobject awtWindow = (*env)->GetObjectField(env, platformWindow, jf_target);
-        if (awtWindow != NULL) {
-            NSRect frame = [self.window frame];
-            float windowHeight = frame.size.height;
-            returnValue = (*env)->CallIntMethod(env, awtWindow, jm_hitTestCustomDecoration, (jint) point.x,  (jint) (windowHeight - point.y));
-            CHECK_EXCEPTION();
-            (*env)->DeleteLocalRef(env, awtWindow);
-        }
-        (*env)->DeleteLocalRef(env, platformWindow);
+    if (!platformWindow) return YES;
+    BOOL result = YES;
+    jobject frame = (*env)->GetObjectField(env, platformWindow, jf_target);
+    if (frame && (*env)->IsInstanceOf(env, frame, jc_Frame)) {
+        result = (BOOL) (*env)->GetBooleanField(env, frame, jf_allowCustomTitlebarNativeActions);
     }
-    return returnValue;
+    CHECK_EXCEPTION();
+    (*env)->DeleteLocalRef(env, frame);
+    (*env)->DeleteLocalRef(env, platformWindow);
+    return result;
 }
 
 - (void)mouseDown:(NSEvent *)event
 {
-    _draggingWindow = NO_DRAG;
-    _accumulatedDragDelta = 0.0;
+    _dragging = NO;
     // We don't follow the regular responder chain here since the native window swallows events in some cases
     [[self.window contentView] deliverJavaMouseEvent:event];
 }
 
 - (void)mouseDragged:(NSEvent *)event
 {
-    if (_draggingWindow == NO_DRAG) {
-        jint hitSpot = [self hitTestCustomDecoration:event.locationInWindow];
-        switch (hitSpot) {
-            case java_awt_Window_CustomWindowDecoration_DRAGGABLE_AREA:
-                // Start drag only after 4px threshold inside DRAGGABLE_AREA
-                if ((_accumulatedDragDelta += fabs(event.deltaX) + fabs(event.deltaY)) <= 4.0) break;
-            case java_awt_Window_CustomWindowDecoration_NO_HIT_SPOT:
-                [self.window performWindowDragWithEvent:event];
-                _draggingWindow = DRAG;
-                break;
-            default:
-                _draggingWindow = SKIP_DRAG;
+    if (!_dragging) {
+        _dragging = YES;
+        if ([self areCustomTitlebarNativeActionsAllowed]) {
+            [self.window performWindowDragWithEvent:event];
+            return;
         }
     }
+    // We don't follow the regular responder chain here since the native window swallows events in some cases
+    [[self.window contentView] deliverJavaMouseEvent:event];
 }
 
 - (void)mouseUp:(NSEvent *)event
 {
-    if (_draggingWindow == DRAG) {
-        _draggingWindow = NO_DRAG;
-    } else {
-        jint hitSpot = [self hitTestCustomDecoration:event.locationInWindow];
-        if (event.clickCount == 2 && hitSpot == java_awt_Window_CustomWindowDecoration_NO_HIT_SPOT) {
-            if ([[[NSUserDefaults standardUserDefaults] stringForKey:@"AppleActionOnDoubleClick"] isEqualToString:@"Maximize"]) {
-                [self.window performZoom:nil];
-            } else {
-                [self.window performMiniaturize:nil];
-            }
+    if (event.clickCount == 2 && [self areCustomTitlebarNativeActionsAllowed]) {
+        if ([[[NSUserDefaults standardUserDefaults] stringForKey:@"AppleActionOnDoubleClick"] isEqualToString:@"Maximize"]) {
+            [self.window performZoom:nil];
+        } else {
+            [self.window performMiniaturize:nil];
         }
-
-        // We don't follow the regular responder chain here since the native window swallows events in some cases
-        [[self.window contentView] deliverJavaMouseEvent:event];
     }
+
+    // We don't follow the regular responder chain here since the native window swallows events in some cases
+    [[self.window contentView] deliverJavaMouseEvent:event];
 }
 
 @end

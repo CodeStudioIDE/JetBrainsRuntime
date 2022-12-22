@@ -4011,10 +4011,14 @@ public class Window extends Container implements Accessible {
         }
     }
 
+    @Deprecated(forRemoval = true)
     private transient volatile boolean hasCustomDecoration;
+    @Deprecated(forRemoval = true)
     private transient volatile List<Map.Entry<Shape, Integer>> customDecorHitTestSpots;
+    @Deprecated(forRemoval = true)
     private transient volatile int customDecorTitleBarHeight = -1; // 0 can be a legal value when no title bar is expected
 
+    @Deprecated(forRemoval = true)
     // called from native
     private int hitTestCustomDecoration(int x, int y) {
         var spots = customDecorHitTestSpots;
@@ -4025,6 +4029,7 @@ public class Window extends Container implements Accessible {
         return CustomWindowDecoration.NO_HIT_SPOT;
     }
 
+    @Deprecated(forRemoval = true)
     private static class CustomWindowDecoration {
 
         CustomWindowDecoration() {
@@ -4084,19 +4089,6 @@ public class Window extends Container implements Accessible {
                     .withStatic("setTitleBarHeight", "setCustomDecorationTitleBarHeight", "sun.lwawt.macosx.CPlatformWindow").build();
             void setTitleBarHeight(Window target, ComponentPeer peer, float height);
         }
-    }
-
-    @Deprecated
-    boolean hasCustomDecoration() {
-        return hasCustomDecoration;
-    }
-
-    /**
-     * Set via reflection (JB JdkEx API).
-     */
-    @Deprecated
-    void setHasCustomDecoration() {
-        hasCustomDecoration = true;
     }
 
     private volatile boolean ignoreMouseEvents;

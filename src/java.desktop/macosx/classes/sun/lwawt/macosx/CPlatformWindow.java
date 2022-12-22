@@ -1519,6 +1519,13 @@ public class CPlatformWindow extends CFRetainedResource implements PlatformWindo
         if (target instanceof javax.swing.RootPaneContainer) {
             final javax.swing.JRootPane rootpane = ((javax.swing.RootPaneContainer)target).getRootPane();
             if (rootpane != null) rootpane.putClientProperty(WINDOW_TRANSPARENT_TITLE_BAR_HEIGHT, height);
+        } else {
+            var c = ((CPlatformWindow) ((LWWindowPeer) peer).getPlatformWindow());
+            boolean enabled = height != 0;
+            c.setStyleBits(FULL_WINDOW_CONTENT, enabled);
+            c.setStyleBits(TRANSPARENT_TITLE_BAR, enabled);
+            c.setStyleBits(TITLE_VISIBLE, !enabled);
+            c.execute(ptr -> AWTThreading.executeWaitToolkit(wait -> nativeSetTransparentTitleBarHeight(ptr, height)));
         }
     }
 

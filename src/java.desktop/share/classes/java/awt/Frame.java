@@ -26,6 +26,7 @@
 package java.awt;
 
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseEvent;
 import java.awt.event.WindowEvent;
 import java.awt.peer.FramePeer;
 import java.io.IOException;
@@ -1269,6 +1270,51 @@ public class Frame extends Window implements MenuContainer {
      * Initialize JNI field and method IDs
      */
     private static native void initIDs();
+
+    // --- Custom titlebar ---
+
+    static class CustomTitlebar {
+        int height = 50;
+    }
+
+    private transient CustomTitlebar customTitlebar = new CustomTitlebar();
+    /**
+     * Used to allow/prevent native titlebar actions: window drag and double-click maximization.
+     */
+    private transient boolean allowCustomTitlebarNativeActions = false;
+
+    void dispatchEventImpl(AWTEvent e) {
+        super.dispatchEventImpl(e);
+        CustomTitlebar customTitlebar = this.customTitlebar;
+        if (customTitlebar != null && e instanceof MouseEvent me) {
+            /* Lightweight case:
+             *  Mouse event will be consumed by any component which has any mouse event listeners or cursor set.
+             *  Otherwise, mouse event will fall through down to the frame and will cause default behavior.
+             * Heavyweight case:
+             *  Mouse event will be dispatched to the topmost heavy component at this point,
+             *  event will not fall through to the frame.
+             */
+            allowCustomTitlebarNativeActions = !e.isConsumed() && me.getY() < customTitlebar.height;
+            if (!e.isConsumed() && me.getY() < customTitlebar.height) { // TODO account for insets
+                // TODO allow native actions
+            } else {
+                // TODO disallow native actions
+            }
+        }
+    }
+
+    private static void defaultNativeTitlebarAction(MouseEvent e) {
+        int y = e.getY();
+        Component c = e.getComponent();
+        while (c != null) {
+            if (c instanceof Frame f && f.customTitlebar != null) {
+                f.allowCustomTitlebarNativeActions = !e.isConsumed() && y < f.customTitlebar.height; // TODO account for insets
+                return;
+            }
+            y += c.getY();
+            c = c.getParent();
+        }
+    }
 
     /*
      * --- Accessibility Support ---
