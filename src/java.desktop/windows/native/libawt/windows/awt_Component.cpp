@@ -766,6 +766,14 @@ jobject AwtComponent::FindHeavyweightUnderCursor(BOOL useCache) {
         if (comp != NULL) {
             INT nHittest = (INT)::SendMessage(hit, WM_NCHITTEST,
                                           0, MAKELPARAM(p.x, p.y));
+
+            if (nHittest == HTCAPTION && comp->HasCustomDecoration()) {
+                // In case of custom titlebar, WindowFromPoint will return root frame, so search further
+                ScreenToBottommostChild(hit, p.x, p.y);
+                comp = AwtComponent::GetComponent(hit);
+                if (comp != NULL) nHittest = HTCLIENT;
+            }
+
             /*
              * Fix for BugTraq ID 4304024.
              * Allow a non-default cursor only for the client area.
@@ -1644,7 +1652,21 @@ LRESULT AwtComponent::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
           mr = WmNcMouseUp(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), LEFT_BUTTON);
           break;
       case WM_NCRBUTTONDOWN:
+      case WM_NCRBUTTONDBLCLK:
            mr = WmNcMouseDown(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), RIGHT_BUTTON);
+           break;
+      case WM_NCMBUTTONDOWN:
+      case WM_NCMBUTTONDBLCLK:
+           mr = WmNcMouseDown(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), MIDDLE_BUTTON);
+           break;
+      case WM_NCXBUTTONDOWN:
+      case WM_NCXBUTTONDBLCLK:
+           if (AwtToolkit::GetInstance().areExtraMouseButtonsEnabled()) {
+               int b = 0;
+               if (HIWORD(wParam) == 1) b = X1_BUTTON;
+               else if (HIWORD(wParam) == 2) b = X2_BUTTON;
+               if (b != 0) mr = WmNcMouseDown(LOWORD(wParam), GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), b);
+           }
            break;
         case WM_NCMOUSEMOVE:
             mr = WmNcMouseMove(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
@@ -1759,9 +1781,19 @@ LRESULT AwtComponent::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
           }
       case WM_SETCURSOR:
           mr = mrDoDefault;
-          if (LOWORD(lParam) == HTCLIENT) {
+          if (LOWORD(lParam) == HTCLIENT || LOWORD(lParam) == HTCAPTION) {
               if (AwtComponent* comp =
                                     AwtComponent::GetComponent((HWND)wParam)) {
+                  if (LOWORD(lParam) == HTCAPTION) {
+                      if (!comp->HasCustomDecoration()) break;
+                      // When custom titlebar is enabled, WM_SETCURSOR is sent to root Frame, so find actual component under cursor
+                      HWND hwnd = (HWND) wParam;
+                      POINT p;
+                      ::GetCursorPos(&p);
+                      ScreenToBottommostChild(hwnd, p.x, p.y);
+                      comp = AwtComponent::GetComponent(hwnd);
+                      if (!comp) break;
+                  }
                   AwtCursor::UpdateCursor(comp);
                   mr = mrConsume;
               }
@@ -2516,7 +2548,7 @@ MsgRouting AwtComponent::WmMouseDown(UINT flags, int x, int y, int button)
      * SetCapture() sends WM_CAPTURECHANGED and breaks that
      * assumption.
      */
-    SetDragCapture(flags);
+    if (!(flags & MK_NOCAPTURE)) SetDragCapture(flags);
 
     AwtWindow * owner = (AwtWindow*)GetComponent(GetTopLevelParentForWindow(GetHWnd()));
     if (AwtWindow::GetGrabbedWindow() != NULL && owner != NULL) {

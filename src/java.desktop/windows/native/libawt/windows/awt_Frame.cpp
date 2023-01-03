@@ -101,6 +101,8 @@ static bool SetFocusToPluginControl(HWND hwndPlugin);
 
 jfieldID AwtFrame::handleID;
 
+jclass AwtFrame::frameCID;
+jfieldID AwtFrame::allowCustomTitlebarNativeActionsID;
 jfieldID AwtFrame::undecoratedID;
 jmethodID AwtFrame::getExtendedStateMID;
 
@@ -129,7 +131,6 @@ AwtFrame::AwtFrame() {
     m_zoomed = FALSE;
     m_maxBoundsSet = FALSE;
     m_forceResetZoomed = FALSE;
-    m_pHasCustomDecoration = NULL;
 
     isInManualMoveOrSize = FALSE;
     grabbedHitTest = 0;
@@ -515,15 +516,7 @@ MsgRouting AwtFrame::WmMouseMove(UINT flags, int x, int y) {
      * If this Frame is non-focusable then we should implement move and size operation for it by
      * ourselfves because we don't dispatch appropriate mouse messages to default window procedure.
      */
-    if (isInManualMoveOrSize) {
-        if (grabbedHitTest == HTCAPTION) {
-            WINDOWPLACEMENT placement;
-            ::GetWindowPlacement(GetHWnd(), &placement);
-            if (placement.showCmd == SW_SHOWMAXIMIZED) {
-                placement.showCmd = SW_SHOWNORMAL;
-                ::SetWindowPlacement(GetHWnd(), &placement);
-            }
-        }
+    if (!IsFocusableWindow() && isInManualMoveOrSize) {
         DWORD curPos = ::GetMessagePos();
         x = GET_X_LPARAM(curPos);
         y = GET_Y_LPARAM(curPos);
@@ -583,6 +576,29 @@ MsgRouting AwtFrame::WmMouseMove(UINT flags, int x, int y) {
 }
 
 MsgRouting AwtFrame::WmNcMouseUp(WPARAM hitTest, int x, int y, int button) {
+    if (hitTest == HTCAPTION && HasCustomDecoration()) {
+        int b = button & ~DBL_CLICK; // Delete double click modifier
+        UINT flags = GetButtonMK(b);
+        UINT msg;
+        switch (b) {
+            case LEFT_BUTTON:
+                msg = WM_LBUTTONUP;
+                break;
+            case MIDDLE_BUTTON:
+                msg = WM_MBUTTONUP;
+                break;
+            case RIGHT_BUTTON:
+                msg = WM_RBUTTONUP;
+                break;
+            case X1_BUTTON:
+            case X2_BUTTON:
+                msg = WM_XBUTTONUP;
+                flags = MAKEWPARAM(flags, b == X1_BUTTON ? 1 : 2);
+                break;
+        }
+        SendMessageAtPoint(msg, flags, x, y);
+        return mrConsume;
+    }
     if (!IsFocusableWindow() && (button & LEFT_BUTTON)) {
         /*
          * Fix for 6399659.
@@ -631,43 +647,34 @@ MsgRouting AwtFrame::WmNcMouseDown(WPARAM hitTest, int x, int y, int button) {
     if (m_grabbedWindow != NULL/* && !m_grabbedWindow->IsOneOfOwnersOf(this)*/) {
         m_grabbedWindow->Ungrab();
     }
-    // For windows with custom decorations, handle caption-related mouse events
-    // Do not handle events from caption itself to preserve native drag behavior
-    if (HasCustomDecoration()) {
-        switch (hitTest) {
-            case HTCAPTION:
-            case HTMINBUTTON:
-            case HTMAXBUTTON:
-            case HTCLOSE:
-            case HTMENU:
-                RECT rcWindow;
-                GetWindowRect(GetHWnd(), &rcWindow);
-                if (hitTest == HTCAPTION) {
-                    JNIEnv *env = (JNIEnv *) JNU_GetEnv(jvm, JNI_VERSION_1_2);
-                    jint customSpot = JNU_CallMethodByName(env, NULL, GetTarget(env),
-                                                           "hitTestCustomDecoration", "(II)I",
-                                                           ScaleDownX(x - rcWindow.left),
-                                                           ScaleDownY(y - rcWindow.top)).i;
-                    if (customSpot == java_awt_Window_CustomWindowDecoration_DRAGGABLE_AREA) {
-                        if (button & LEFT_BUTTON) {
-                            savedMousePos.x = x;
-                            savedMousePos.y = y;
-                            ::SetCapture(GetHWnd());
-                            isInManualMoveOrSize = TRUE;
-                            grabbedHitTest = hitTest;
-                        }
-                    } else break;
-                }
-                POINT myPos;
-                myPos.x = x;
-                myPos.y = y;
-                ::ScreenToClient(GetHWnd(), &myPos);
-                WmMouseDown(GetButtonMK(button),
-                            myPos.x,
-                            myPos.y,
-                            button);
-                return mrConsume;
+    if (hitTest == HTCAPTION && HasCustomDecoration()) {
+        int b = button & ~DBL_CLICK; // Delete double click modifier
+        UINT flags = GetButtonMK(b);
+        // When double-clicking titlebar of native Windows apps, they respond to second mouse press, not release
+        const int LEFT_DBLCLCK = LEFT_BUTTON | DBL_CLICK;
+        BOOL maximize = (button & LEFT_DBLCLCK) == LEFT_DBLCLCK && IsResizable();
+        BOOL lpress = button == LEFT_BUTTON;
+        BOOL defaultAction = (maximize || lpress) && AreCustomTitlebarNativeActionsAllowed();
+        if (defaultAction) flags |= MK_NOCAPTURE;
+        UINT msg;
+        switch (b) {
+            case LEFT_BUTTON:
+                msg = WM_LBUTTONDOWN;
+                break;
+            case MIDDLE_BUTTON:
+                msg = WM_MBUTTONDOWN;
+                break;
+            case RIGHT_BUTTON:
+                msg = WM_RBUTTONDOWN;
+                break;
+            case X1_BUTTON:
+            case X2_BUTTON:
+                msg = WM_XBUTTONDOWN;
+                flags = MAKEWPARAM(flags, b == X1_BUTTON ? 1 : 2);
+                break;
         }
+        SendMessageAtPoint(msg, flags, x, y);
+        return defaultAction ? mrDoDefault : mrConsume;
     }
     if (!IsFocusableWindow() && (button & LEFT_BUTTON)) {
         switch (hitTest) {
@@ -701,21 +708,11 @@ MsgRouting AwtFrame::WmNcMouseDown(WPARAM hitTest, int x, int y, int button) {
 }
 
 MsgRouting AwtFrame::WmNcMouseMove(WPARAM hitTest, int x, int y) {
-    // For windows with custom decorations, handle caption-related mouse events
-    if (HasCustomDecoration()) {
-        switch (hitTest) {
-            case HTMINBUTTON:
-            case HTMAXBUTTON:
-            case HTCLOSE:
-            case HTMENU:
-            case HTCAPTION:
-                POINT myPos;
-                myPos.x = x;
-                myPos.y = y;
-                ::ScreenToClient(GetHWnd(), &myPos);
-                WmMouseMove(0, myPos.x, myPos.y);
-                if (hitTest != HTCAPTION) return mrConsume; // Preserve default window drag for HTCAPTION
-        }
+    // For min/max/close buttons, WM_MOUSEMOVE are the only events sent.
+    if ((hitTest == HTCAPTION || hitTest == HTMINBUTTON || hitTest == HTMAXBUTTON || hitTest == HTCLOSE) &&
+            HasCustomDecoration()) {
+        SendMessageAtPoint(WM_MOUSEMOVE, 0, x, y);
+        return mrConsume;
     }
     return AwtWindow::WmNcMouseMove(hitTest, x, y);
 }
@@ -1732,102 +1729,87 @@ ret:
 
 // {start} Custom Decoration Support
 
-BOOL AwtFrame::HasCustomDecoration()
-{
-    if (!m_pHasCustomDecoration) {
-        m_pHasCustomDecoration = new BOOL;
-        JNIEnv *env = (JNIEnv *) JNU_GetEnv(jvm, JNI_VERSION_1_2);
-        *m_pHasCustomDecoration = JNU_GetFieldByName(env, NULL, GetTarget(env), "hasCustomDecoration", "Z").z;
+BOOL AwtFrame::HasCustomDecoration() {
+    JNIEnv *env = (JNIEnv *) JNU_GetEnv(jvm, JNI_VERSION_1_2);
+    return JNU_GetFieldByName(env, NULL, GetTarget(env), "hasCustomDecoration", "Z").z; // TODO DeleteLOcalRef
+}
+
+BOOL AwtFrame::AreCustomTitlebarNativeActionsAllowed() {
+    JNIEnv *env = (JNIEnv *) JNU_GetEnv(jvm, JNI_VERSION_1_2);
+    jobject frame = GetTarget(env);
+    BOOL result = TRUE;
+    if (frame && env->IsInstanceOf(frame, AwtFrame::frameCID)) {
+        result = env->GetBooleanField(frame, AwtFrame::allowCustomTitlebarNativeActionsID);
     }
-    return *m_pHasCustomDecoration;
+    env->DeleteLocalRef(frame);
+    return result;
 }
 
-void _UpdateCustomDecoration(void* p) {
-    JNIEnv *env = (JNIEnv *)JNU_GetEnv(jvm, JNI_VERSION_1_2);
-
-    jobject self = reinterpret_cast<jobject>(p);
-    PDATA pData;
-    JNI_CHECK_PEER_GOTO(self, ret);
-
-    AwtFrame* frame = (AwtFrame*)pData;
-    if (!frame->m_pHasCustomDecoration) frame->m_pHasCustomDecoration = new BOOL;
-    *frame->m_pHasCustomDecoration = JNU_GetFieldByName(env, NULL, frame->GetTarget(env), "hasCustomDecoration", "Z").z;
-    frame->RedrawNonClient();
-ret:
-    env->DeleteGlobalRef(self);
+void AwtFrame::SendMessageAtPoint(UINT msg, WPARAM wparam, int ncx, int ncy) {
+    HWND w = GetHWnd();
+    POINT p = ScreenToBottommostChild(w, ncx, ncy);
+    ::SendMessage(w, msg, wparam, MAKELPARAM(p.x, p.y));
 }
 
-void GetSysInsets(RECT* insets, AwtFrame* pFrame) {
-    if (pFrame->IsUndecorated()) {
-        ::SetRectEmpty(insets);
-        return;
+RECT AwtFrame::GetSysInsets() {
+    RECT insets;
+    if (IsUndecorated()) {
+        ::SetRectEmpty(&insets);
+        return insets;
     }
     Devices::InstanceAccess devices;
     HMONITOR hmon;
-    if (::IsZoomed(pFrame->GetHWnd())) {
+    if (::IsZoomed(GetHWnd())) {
         WINDOWPLACEMENT wp;
-        ::GetWindowPlacement(pFrame->GetHWnd(), &wp);
+        ::GetWindowPlacement(GetHWnd(), &wp);
         hmon = ::MonitorFromRect(&wp.rcNormalPosition, MONITOR_DEFAULTTONEAREST);
     } else {
         // this method can return wrong monitor in a zoomed state in multi-dpi env
-        hmon = ::MonitorFromWindow(pFrame->GetHWnd(), MONITOR_DEFAULTTONEAREST);
+        hmon = ::MonitorFromWindow(GetHWnd(), MONITOR_DEFAULTTONEAREST);
     }
     AwtWin32GraphicsDevice* device = devices->GetDevice(AwtWin32GraphicsDevice::GetScreenFromHMONITOR(hmon));
     int dpi = device ? device->GetScaleX() * 96 : 96;
 
     // GetSystemMetricsForDpi gives incorrect values, use AdjustWindowRectExForDpi for border metrics instead
     RECT rect = {};
-    DWORD style = pFrame->IsResizable() ? WS_OVERLAPPEDWINDOW : WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME;
+    DWORD style = IsResizable() ? WS_OVERLAPPEDWINDOW : WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME;
     AwtToolkit::AdjustWindowRectExForDpi(&rect, style, FALSE, NULL, dpi);
-    ::SetRect(insets, -rect.left, -rect.top, rect.right, rect.bottom);
+    ::SetRect(&insets, -rect.left, -rect.top, rect.right, rect.bottom);
+    return insets;
 }
 
-LRESULT HitTestNCA(AwtFrame* frame, int x, int y) {
+LRESULT AwtFrame::HitTestNCA(int x, int y) {
     RECT rcWindow;
-    RECT insets;
+    HWND hwnd = GetHWnd();
 
-    GetSysInsets(&insets, frame);
-    GetWindowRect(frame->GetHWnd(), &rcWindow);
+    RECT insets = GetSysInsets();
+    GetWindowRect(hwnd, &rcWindow);
 
     // Get the frame rectangle, adjusted for the style without a caption.
     RECT rcFrame = {};
     AdjustWindowRectEx(&rcFrame, WS_OVERLAPPEDWINDOW & ~WS_CAPTION, FALSE, NULL);
 
     JNIEnv *env = (JNIEnv *) JNU_GetEnv(jvm, JNI_VERSION_1_2);
-    int titleHeight = (int)JNU_GetFieldByName(env, NULL, frame->GetTarget(env),
+    int titleHeight = (int)JNU_GetFieldByName(env, NULL, GetTarget(env), // TODO DeleteLocalRef
                                               "customDecorTitleBarHeight", "I").i;
     if (titleHeight >= 0) {
-        titleHeight = frame->ScaleUpY(titleHeight);
+        titleHeight = ScaleUpY(titleHeight);
         insets.top = titleHeight; // otherwise leave default
     }
 
     USHORT uRow = 1;
     USHORT uCol = 1;
-    BOOL fOnResizeBorder = FALSE;
+    LRESULT captionVariant;
 
     if (y >= rcWindow.top &&
         y < rcWindow.top + insets.top)
     {
-        jint customSpot = JNU_CallMethodByName(env, NULL, frame->GetTarget(env),
-                                               "hitTestCustomDecoration", "(II)I",
-                                               frame->ScaleDownX(x - rcWindow.left),
-                                               frame->ScaleDownY(y - rcWindow.top)).i;
-        switch (customSpot) {
-            case java_awt_Window_CustomWindowDecoration_NO_HIT_SPOT:
-            case java_awt_Window_CustomWindowDecoration_DRAGGABLE_AREA:
-                break; // Nothing
-            case java_awt_Window_CustomWindowDecoration_MINIMIZE_BUTTON:
-                return HTMINBUTTON;
-            case java_awt_Window_CustomWindowDecoration_MAXIMIZE_BUTTON:
-                return HTMAXBUTTON;
-            case java_awt_Window_CustomWindowDecoration_CLOSE_BUTTON:
-                return HTCLOSE;
-            case java_awt_Window_CustomWindowDecoration_MENU_BAR:
-                return HTMENU;
-            default:
-                return HTNOWHERE;
+        if (y < (rcWindow.top - rcFrame.top)) {
+            captionVariant = HTTOP;
+        } else {
+            captionVariant = HTCAPTION;
+//            captionVariant = AreCustomTitlebarNativeActionsAllowed() ? HTMAXBUTTON : HTCAPTION; TODO min/max/close buttons (remember to check AreCustomTitlebarNativeActionsAllowed())
         }
-        fOnResizeBorder = (y < (rcWindow.top - rcFrame.top));
         uRow = 0;
     } else if (y < rcWindow.bottom &&
                y >= rcWindow.bottom - insets.bottom) {
@@ -1845,7 +1827,7 @@ LRESULT HitTestNCA(AwtFrame* frame, int x, int y) {
     }
 
     LRESULT hitTests[3][3] = {
-            {HTTOPLEFT, fOnResizeBorder ? HTTOP : HTCAPTION, HTTOPRIGHT},
+            {HTTOPLEFT, captionVariant, HTTOPRIGHT},
             {HTLEFT, HTNOWHERE, HTRIGHT},
             {HTBOTTOMLEFT, HTBOTTOM, HTBOTTOMRIGHT},
     };
@@ -1858,8 +1840,7 @@ MsgRouting AwtFrame::WmNcCalcSize(BOOL wParam, LPNCCALCSIZE_PARAMS lpncsp, LRESU
     if (!wParam || !HasCustomDecoration()) {
         return AwtWindow::WmNcCalcSize(wParam, lpncsp, retVal);
     }
-    RECT insets;
-    GetSysInsets(&insets, this);
+    RECT insets = GetSysInsets();
     RECT* rect = &lpncsp->rgrc[0];
 
     rect->left += insets.left;
@@ -1915,8 +1896,22 @@ MsgRouting AwtFrame::WmNcHitTest(int x, int y, LRESULT& retVal)
         retVal = HTCLIENT;
         return mrConsume;
     }
-    retVal = HitTestNCA(this, x, y);
+    retVal = HitTestNCA(x, y);
     return retVal == HTNOWHERE ? mrDoDefault : mrConsume;
+}
+
+void _UpdateCustomDecoration(void* p) {
+    JNIEnv *env = (JNIEnv *)JNU_GetEnv(jvm, JNI_VERSION_1_2);
+
+    jobject self = reinterpret_cast<jobject>(p);
+    PDATA pData;
+    JNI_CHECK_PEER_GOTO(self, ret);
+
+    AwtFrame* frame = (AwtFrame*)pData;
+    // TODO update custom titlebar height
+    frame->RedrawNonClient();
+    ret:
+    env->DeleteGlobalRef(self);
 }
 
 // {end} Custom Decoration Support
@@ -1937,6 +1932,9 @@ Java_java_awt_Frame_initIDs(JNIEnv *env, jclass cls)
 {
     TRY;
 
+    AwtFrame::frameCID = (jclass) env->NewGlobalRef(cls);
+    AwtFrame::allowCustomTitlebarNativeActionsID = env->GetFieldID(cls,"allowCustomTitlebarNativeActions","Z");
+    DASSERT(AwtFrame::allowCustomTitlebarNativeActionsID != NULL);
     AwtFrame::undecoratedID = env->GetFieldID(cls,"undecorated","Z");
     DASSERT(AwtFrame::undecoratedID != NULL);
 

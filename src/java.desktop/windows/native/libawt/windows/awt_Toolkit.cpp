@@ -1771,6 +1771,8 @@ BOOL AwtToolkit::PreProcessMouseMsg(AwtComponent* p, MSG& msg)
     curPos.x = GET_X_LPARAM(dwCurPos);
     curPos.y = GET_Y_LPARAM(dwCurPos);
     HWND hWndFromPoint = ::WindowFromPoint(curPos);
+    // In case of custom titlebar, WindowFromPoint will return root frame, so search further just in case
+    ScreenToBottommostChild(hWndFromPoint, curPos.x, curPos.y);
     // hWndFromPoint == 0 if mouse is over a scrollbar
     AwtComponent* mouseComp =
         AwtComponent::GetComponent(hWndFromPoint);
@@ -3259,6 +3261,17 @@ LRESULT AwtToolkit::InvokeInputMethodFunction(UINT msg, WPARAM wParam, LPARAM lP
             return m_inputMethodData;
         }
         return 0;
+    }
+}
+
+POINT ScreenToBottommostChild(HWND& w, LONG ncx, LONG ncy) {
+    POINT p;
+    for (;;) {
+        p = {ncx, ncy};
+        ::ScreenToClient(w, &p);
+        HWND t = ::RealChildWindowFromPoint(w, p);
+        if (t == NULL || t == w) return p;
+        w = t;
     }
 }
 

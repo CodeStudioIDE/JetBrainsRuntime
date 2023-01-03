@@ -268,8 +268,6 @@ public:
     inline HWND GetOverriddenHWnd() { return m_overriddenHwnd; }
     inline void OverrideHWnd(HWND hwnd) { m_overriddenHwnd = hwnd; }
 
-    virtual BOOL HasCustomDecoration() { return FALSE; }
-
 private:
     static int ms_instanceCounter;
     static HHOOK ms_hCBTFilter;

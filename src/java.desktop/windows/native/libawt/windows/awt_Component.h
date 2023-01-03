@@ -66,6 +66,7 @@ const UINT MAX_ACP_STR_LEN = 7; // ANSI CP identifiers are no longer than this
 // combination of standard mouse button flags
 const int ALL_MK_BUTTONS = MK_LBUTTON|MK_MBUTTON|MK_RBUTTON;
 const int X_BUTTONS = MK_XBUTTON1|MK_XBUTTON2;
+#define MK_NOCAPTURE 0x80000000
 
 // Whether to check for embedded frame and adjust location
 #define CHECK_EMBEDDED 0
@@ -654,6 +655,9 @@ public:
 
     static MSG* CreateMessage(UINT message, WPARAM wParam, LPARAM lParam, int x, int y);
     static void InitMessage(MSG* msg, UINT message, WPARAM wParam, LPARAM lParam, int x, int y);
+
+    // Can be TRUE only for Frame
+    virtual BOOL HasCustomDecoration() { return FALSE; }
 
     // Some methods to be called on Toolkit thread via Toolkit.InvokeFunction()
     static void _Show(void *param);

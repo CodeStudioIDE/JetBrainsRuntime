@@ -751,4 +751,6 @@ template<typename T> inline T* SafeCreate(T* &pArg) {
     }
 }
 
+POINT ScreenToBottommostChild(HWND& w, LONG ncx, LONG ncy);
+
 #endif /* AWT_TOOLKIT_H */

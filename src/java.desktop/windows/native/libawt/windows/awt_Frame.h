@@ -49,6 +49,8 @@ public:
     };
 
     /* java.awt.Frame fields and method IDs */
+    static jclass frameCID;
+    static jfieldID allowCustomTitlebarNativeActionsID;
     static jfieldID undecoratedID;
 
     /* sun.awt.windows.WEmbeddedFrame fields and method IDs */
@@ -159,7 +161,6 @@ public:
     INLINE HWND GetImeTargetComponent() { return m_imeTargetComponent; }
     INLINE void SetImeTargetComponent(HWND hwnd) { m_imeTargetComponent = hwnd; }
 
-    BOOL* m_pHasCustomDecoration;
     BOOL HasCustomDecoration();
 
 protected:
@@ -224,6 +225,11 @@ private:
     BOOL isInManualMoveOrSize;
     WPARAM grabbedHitTest;
     POINT savedMousePos;
+
+    BOOL AreCustomTitlebarNativeActionsAllowed();
+    void SendMessageAtPoint(UINT msg, WPARAM w, int x, int y);
+    RECT GetSysInsets();
+    LRESULT HitTestNCA(int x, int y);
 
     /*
      * Hashtable<Thread, BlockedThreadStruct> - a table that contains all the

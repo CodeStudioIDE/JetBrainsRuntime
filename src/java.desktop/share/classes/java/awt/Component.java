@@ -4914,6 +4914,8 @@ public abstract class Component implements ImageObserver, MenuContainer,
         {
             return;
         }
+        Frame customTitlebarFrame = e instanceof MouseEvent ?
+                updateCustomTitlebarNativeBehavior(true) : null;
 
         /*
          * 2. Allow the Toolkit to pass this to AWTEventListeners.
@@ -5076,6 +5078,11 @@ public abstract class Component implements ImageObserver, MenuContainer,
             if (tpeer != null) {
                 tpeer.handleEvent(e);
             }
+        }
+
+        if (customTitlebarFrame != null) {
+            customTitlebarFrame.allowCustomTitlebarNativeActions =
+                customTitlebarFrame.updatedCustomTitlebarNativeActions;
         }
 
         if (SunToolkit.isTouchKeyboardAutoShowEnabled() &&
@@ -10567,5 +10574,15 @@ public abstract class Component implements ImageObserver, MenuContainer,
      */
     public static void disableInputMethodSupport() {
         INPUT_METHODS_DISABLED = true;
+    }
+
+    Frame updateCustomTitlebarNativeBehavior(boolean allowNativeActions) {
+        Container p = parent;
+        if (p == null) return null;
+        if ((eventMask & (AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK | AWTEvent.MOUSE_WHEEL_EVENT_MASK)) != 0 ||
+                mouseListener != null || mouseMotionListener != null || mouseWheelListener != null || cursor != null) {
+            allowNativeActions = false;
+        }
+        return p.updateCustomTitlebarNativeBehavior(allowNativeActions);
     }
 }
