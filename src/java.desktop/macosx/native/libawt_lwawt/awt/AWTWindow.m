@@ -1553,6 +1553,11 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
     return NO;
 }
 
+- (BOOL)acceptsFirstMouse:(NSEvent *)event
+{
+    return YES;
+}
+
 - (BOOL)areCustomTitlebarNativeActionsAllowed
 {
     JNIEnv *env = [ThreadUtilities getJNIEnvUncached];
@@ -1577,8 +1582,7 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
 - (void)mouseDown:(NSEvent *)event
 {
     _dragging = NO;
-    // We don't follow the regular responder chain here since the native window swallows events in some cases
-    [[self.window contentView] deliverJavaMouseEvent:event];
+    [super mouseDown:event];
 }
 
 - (void)mouseDragged:(NSEvent *)event
@@ -1590,12 +1594,12 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
             return;
         }
     }
-    // We don't follow the regular responder chain here since the native window swallows events in some cases
-    [[self.window contentView] deliverJavaMouseEvent:event];
+    [super mouseDragged:event];
 }
 
 - (void)mouseUp:(NSEvent *)event
 {
+    [super mouseUp:event];
     if (event.clickCount == 2 && [self areCustomTitlebarNativeActionsAllowed]) {
         if ([[[NSUserDefaults standardUserDefaults] stringForKey:@"AppleActionOnDoubleClick"] isEqualToString:@"Maximize"]) {
             [self.window performZoom:nil];
@@ -1603,9 +1607,6 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
             [self.window performMiniaturize:nil];
         }
     }
-
-    // We don't follow the regular responder chain here since the native window swallows events in some cases
-    [[self.window contentView] deliverJavaMouseEvent:event];
 }
 
 @end
