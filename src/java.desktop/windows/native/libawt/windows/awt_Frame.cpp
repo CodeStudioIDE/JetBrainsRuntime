@@ -37,7 +37,6 @@
 #include <dwmapi.h>
 
 #include <java_lang_Integer.h>
-#include <java_awt_Window_CustomWindowDecoration.h>
 #include <sun_awt_windows_WEmbeddedFrame.h>
 #include <sun_awt_windows_WEmbeddedFramePeer.h>
 
@@ -101,8 +100,6 @@ static bool SetFocusToPluginControl(HWND hwndPlugin);
 
 jfieldID AwtFrame::handleID;
 
-jclass AwtFrame::frameCID;
-jfieldID AwtFrame::allowCustomTitlebarNativeActionsID;
 jfieldID AwtFrame::undecoratedID;
 jmethodID AwtFrame::getExtendedStateMID;
 
@@ -134,6 +131,7 @@ AwtFrame::AwtFrame() {
 
     isInManualMoveOrSize = FALSE;
     grabbedHitTest = 0;
+    customTitlebarHeight = -1.0f; // Negative means uninitialized
 }
 
 AwtFrame::~AwtFrame()
@@ -576,7 +574,7 @@ MsgRouting AwtFrame::WmMouseMove(UINT flags, int x, int y) {
 }
 
 MsgRouting AwtFrame::WmNcMouseUp(WPARAM hitTest, int x, int y, int button) {
-    if (hitTest == HTCAPTION && HasCustomDecoration()) {
+    if (hitTest == HTCAPTION && HasCustomTitlebar()) {
         int b = button & ~DBL_CLICK; // Delete double click modifier
         UINT flags = GetButtonMK(b);
         UINT msg;
@@ -647,7 +645,7 @@ MsgRouting AwtFrame::WmNcMouseDown(WPARAM hitTest, int x, int y, int button) {
     if (m_grabbedWindow != NULL/* && !m_grabbedWindow->IsOneOfOwnersOf(this)*/) {
         m_grabbedWindow->Ungrab();
     }
-    if (hitTest == HTCAPTION && HasCustomDecoration()) {
+    if (hitTest == HTCAPTION && HasCustomTitlebar()) {
         int b = button & ~DBL_CLICK; // Delete double click modifier
         UINT flags = GetButtonMK(b);
         // When double-clicking titlebar of native Windows apps, they respond to second mouse press, not release
@@ -710,7 +708,7 @@ MsgRouting AwtFrame::WmNcMouseDown(WPARAM hitTest, int x, int y, int button) {
 MsgRouting AwtFrame::WmNcMouseMove(WPARAM hitTest, int x, int y) {
     // For min/max/close buttons, WM_MOUSEMOVE are the only events sent.
     if ((hitTest == HTCAPTION || hitTest == HTMINBUTTON || hitTest == HTMAXBUTTON || hitTest == HTCLOSE) &&
-            HasCustomDecoration()) {
+            HasCustomTitlebar()) {
         SendMessageAtPoint(WM_MOUSEMOVE, 0, x, y);
         return mrConsume;
     }
@@ -1727,21 +1725,41 @@ ret:
     delete nmbs;
 }
 
-// {start} Custom Decoration Support
+// {start} Custom titlebar support
 
-BOOL AwtFrame::HasCustomDecoration() {
-    JNIEnv *env = (JNIEnv *) JNU_GetEnv(jvm, JNI_VERSION_1_2);
-    return JNU_GetFieldByName(env, NULL, GetTarget(env), "hasCustomDecoration", "Z").z; // TODO DeleteLOcalRef
+BOOL AwtFrame::HasCustomTitlebar() {
+    float h = customTitlebarHeight;
+    if (h < 0.0f) h = GetCustomTitlebarHeight();
+    return h > 0.0f;
+}
+
+float AwtFrame::GetCustomTitlebarHeight() {
+    float h = customTitlebarHeight;
+    if (h < 0.0f) {
+        JNIEnv *env = (JNIEnv *) JNU_GetEnv(jvm, JNI_VERSION_1_2);
+        jobject target = GetTarget(env);
+        if (target) {
+            h = env->CallFloatMethod(target, AwtWindow::getCustomTitlebarHeightMID);
+            env->DeleteLocalRef(target);
+        }
+        if (h < 0.0f) h = 0.0f;
+        customTitlebarHeight = h;
+    }
+    // Copied from AwtComponent::ScaleUpY, but without rounding
+    int screen = GetScreenImOn();
+    Devices::InstanceAccess devices;
+    AwtWin32GraphicsDevice* device = devices->GetDevice(screen);
+    return device == NULL ? h : h * device->GetScaleY();
 }
 
 BOOL AwtFrame::AreCustomTitlebarNativeActionsAllowed() {
     JNIEnv *env = (JNIEnv *) JNU_GetEnv(jvm, JNI_VERSION_1_2);
-    jobject frame = GetTarget(env);
+    jobject target = GetTarget(env);
     BOOL result = TRUE;
-    if (frame && env->IsInstanceOf(frame, AwtFrame::frameCID)) {
-        result = env->GetBooleanField(frame, AwtFrame::allowCustomTitlebarNativeActionsID);
+    if (target) {
+        result = env->GetBooleanField(target, AwtWindow::allowCustomTitlebarNativeActionsID);
+        env->DeleteLocalRef(target);
     }
-    env->DeleteLocalRef(frame);
     return result;
 }
 
@@ -1789,20 +1807,15 @@ LRESULT AwtFrame::HitTestNCA(int x, int y) {
     RECT rcFrame = {};
     AdjustWindowRectEx(&rcFrame, WS_OVERLAPPEDWINDOW & ~WS_CAPTION, FALSE, NULL);
 
-    JNIEnv *env = (JNIEnv *) JNU_GetEnv(jvm, JNI_VERSION_1_2);
-    int titleHeight = (int)JNU_GetFieldByName(env, NULL, GetTarget(env), // TODO DeleteLocalRef
-                                              "customDecorTitleBarHeight", "I").i;
-    if (titleHeight >= 0) {
-        titleHeight = ScaleUpY(titleHeight);
-        insets.top = titleHeight; // otherwise leave default
-    }
+    float titlebarHeight = GetCustomTitlebarHeight();
+    if (titlebarHeight <= 0.0f) titlebarHeight = insets.top;
 
     USHORT uRow = 1;
     USHORT uCol = 1;
     LRESULT captionVariant;
 
     if (y >= rcWindow.top &&
-        y < rcWindow.top + insets.top)
+        y < rcWindow.top + titlebarHeight)
     {
         if (y < (rcWindow.top - rcFrame.top)) {
             captionVariant = HTTOP;
@@ -1837,7 +1850,7 @@ LRESULT AwtFrame::HitTestNCA(int x, int y) {
 
 MsgRouting AwtFrame::WmNcCalcSize(BOOL wParam, LPNCCALCSIZE_PARAMS lpncsp, LRESULT& retVal)
 {
-    if (!wParam || !HasCustomDecoration()) {
+    if (!wParam || !HasCustomTitlebar()) {
         return AwtWindow::WmNcCalcSize(wParam, lpncsp, retVal);
     }
     RECT insets = GetSysInsets();
@@ -1889,7 +1902,7 @@ MsgRouting AwtFrame::WmNcCalcSize(BOOL wParam, LPNCCALCSIZE_PARAMS lpncsp, LRESU
 
 MsgRouting AwtFrame::WmNcHitTest(int x, int y, LRESULT& retVal)
 {
-    if (!HasCustomDecoration()) {
+    if (!HasCustomTitlebar()) {
         return AwtWindow::WmNcHitTest(x, y, retVal);
     }
     if (::IsWindow(GetModalBlocker(GetHWnd()))) {
@@ -1900,7 +1913,21 @@ MsgRouting AwtFrame::WmNcHitTest(int x, int y, LRESULT& retVal)
     return retVal == HTNOWHERE ? mrDoDefault : mrConsume;
 }
 
-void _UpdateCustomDecoration(void* p) {
+void AwtFrame::RedrawNonClient()
+{
+    UINT flags = SwpFrameChangeFlags;
+    if (!HasCustomTitlebar()) {
+        // With custom titlebar enabled, SetWindowPos call below can cause WM_SIZE message being sent.
+        // If we're coming here from WFramePeer.initialize (as part of 'setResizable' call),
+        // WM_SIZE message processing can happen concurrently with window flags update done as part of
+        // 'setState' call), and lead to inconsistent state.
+        // So, we disable asynchronous processing in case we have custom titlebar to avoid the race condition.
+        flags |= SWP_ASYNCWINDOWPOS;
+    }
+    ::SetWindowPos(GetHWnd(), (HWND) NULL, 0, 0, 0, 0, flags);
+}
+
+void AwtFrame::_UpdateCustomTitlebar(void* p) {
     JNIEnv *env = (JNIEnv *)JNU_GetEnv(jvm, JNI_VERSION_1_2);
 
     jobject self = reinterpret_cast<jobject>(p);
@@ -1908,13 +1935,13 @@ void _UpdateCustomDecoration(void* p) {
     JNI_CHECK_PEER_GOTO(self, ret);
 
     AwtFrame* frame = (AwtFrame*)pData;
-    // TODO update custom titlebar height
+    frame->customTitlebarHeight = -1.0f; // Reset to uninitialized
     frame->RedrawNonClient();
     ret:
     env->DeleteGlobalRef(self);
 }
 
-// {end} Custom Decoration Support
+// {end} Custom titlebar support
 
 /************************************************************************
  * WFramePeer native methods
@@ -1932,9 +1959,6 @@ Java_java_awt_Frame_initIDs(JNIEnv *env, jclass cls)
 {
     TRY;
 
-    AwtFrame::frameCID = (jclass) env->NewGlobalRef(cls);
-    AwtFrame::allowCustomTitlebarNativeActionsID = env->GetFieldID(cls,"allowCustomTitlebarNativeActions","Z");
-    DASSERT(AwtFrame::allowCustomTitlebarNativeActionsID != NULL);
     AwtFrame::undecoratedID = env->GetFieldID(cls,"undecorated","Z");
     DASSERT(AwtFrame::undecoratedID != NULL);
 
@@ -2251,12 +2275,12 @@ Java_sun_awt_windows_WFramePeer_updateIcon(JNIEnv *env, jobject self)
 }
 
 JNIEXPORT void JNICALL
-Java_sun_awt_windows_WFramePeer_updateCustomDecoration(JNIEnv *env, jobject self)
+Java_sun_awt_windows_WFramePeer_updateCustomTitlebar(JNIEnv *env, jclass cls, jobject peer)
 {
     TRY;
 
-    AwtToolkit::GetInstance().InvokeFunction(_UpdateCustomDecoration, env->NewGlobalRef(self));
-    // global ref is deleted in _UpdateCustomDecoration()
+    AwtToolkit::GetInstance().InvokeFunction(AwtFrame::_UpdateCustomTitlebar, env->NewGlobalRef(peer));
+    // global ref is deleted in _UpdateCustomTitlebar()
 
     CATCH_BAD_ALLOC;
 }

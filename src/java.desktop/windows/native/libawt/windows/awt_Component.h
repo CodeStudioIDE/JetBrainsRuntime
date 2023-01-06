@@ -656,9 +656,6 @@ public:
     static MSG* CreateMessage(UINT message, WPARAM wParam, LPARAM lParam, int x, int y);
     static void InitMessage(MSG* msg, UINT message, WPARAM wParam, LPARAM lParam, int x, int y);
 
-    // Can be TRUE only for Frame
-    virtual BOOL HasCustomDecoration() { return FALSE; }
-
     // Some methods to be called on Toolkit thread via Toolkit.InvokeFunction()
     static void _Show(void *param);
     static void _Hide(void *param);

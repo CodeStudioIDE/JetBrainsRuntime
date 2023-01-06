@@ -31,6 +31,7 @@ import java.awt.Frame;
 import java.awt.GraphicsConfiguration;
 import java.awt.MenuBar;
 import java.awt.Rectangle;
+import java.awt.Window;
 import java.awt.peer.ComponentPeer;
 import java.awt.peer.FramePeer;
 import java.security.AccessController;
@@ -256,8 +257,13 @@ class WFramePeer extends WWindowPeer implements FramePeer {
     private native void synthesizeWmActivate(boolean activate);
 
     // JBR API internals
-    private static void updateCustomDecoration(ComponentPeer peer) {
-        if (peer instanceof WFramePeer) ((WFramePeer) peer).updateCustomDecoration();
+    private static void updateCustomTitlebar(Window target, ComponentPeer peer) {
+        // In native code AwtDialog is actually a descendant of AwtFrame,
+        // so we don't distinguish between WFramePeer and WDialogPeer here,
+        // just treat WFramePeer like a base class.
+        if (peer instanceof WFramePeer || peer instanceof WDialogPeer) {
+            updateCustomTitlebar((WWindowPeer) peer);
+        }
     }
-    private native void updateCustomDecoration();
+    private static native void updateCustomTitlebar(WWindowPeer peer);
 }

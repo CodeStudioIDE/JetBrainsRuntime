@@ -1270,26 +1270,6 @@ public class Frame extends Window implements MenuContainer {
      */
     private static native void initIDs();
 
-    // --- Custom titlebar ---
-
-    static class CustomTitlebar {
-        int height = 50;
-    }
-
-    private transient CustomTitlebar customTitlebar = new CustomTitlebar();
-    /**
-     * Used to allow/prevent native titlebar actions: window drag and double-click maximization.
-     */
-    transient volatile boolean allowCustomTitlebarNativeActions = false;
-    transient boolean updatedCustomTitlebarNativeActions = false;
-
-    @Override
-    Frame updateCustomTitlebarNativeBehavior(boolean allowNativeActions) {
-        if (customTitlebar == null) return null;
-        updatedCustomTitlebarNativeActions = allowNativeActions;
-        return this;
-    }
-
     /*
      * --- Accessibility Support ---
      *

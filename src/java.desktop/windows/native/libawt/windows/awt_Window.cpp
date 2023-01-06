@@ -171,6 +171,7 @@ jfieldID AwtWindow::locationByPlatformID;
 jfieldID AwtWindow::autoRequestFocusID;
 jfieldID AwtWindow::securityWarningWidthID;
 jfieldID AwtWindow::securityWarningHeightID;
+jfieldID AwtWindow::allowCustomTitlebarNativeActionsID;
 
 jfieldID AwtWindow::windowTypeID;
 jmethodID AwtWindow::notifyWindowStateChangedMID;
@@ -179,6 +180,7 @@ jfieldID AwtWindow::sysInsetsID;
 jmethodID AwtWindow::getWarningStringMID;
 jmethodID AwtWindow::calculateSecurityWarningPositionMID;
 jmethodID AwtWindow::windowTypeNameMID;
+jmethodID AwtWindow::getCustomTitlebarHeightMID;
 
 int AwtWindow::ms_instanceCounter = 0;
 HHOOK AwtWindow::ms_hCBTFilter;
@@ -2231,13 +2233,6 @@ void AwtWindow::SetResizable(BOOL isResizable)
     RedrawNonClient();
 }
 
-// SetWindowPos flags to cause frame edge to be recalculated
-static const UINT SwpFrameChangeFlags =
-    SWP_FRAMECHANGED | /* causes WM_NCCALCSIZE to be called */
-    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
-    SWP_NOACTIVATE | SWP_NOCOPYBITS |
-    SWP_NOREPOSITION | SWP_NOSENDCHANGING;
-
 //
 // Forces WM_NCCALCSIZE to be called to recalculate
 // window border (updates insets) without redrawing it
@@ -2253,16 +2248,7 @@ void AwtWindow::RecalcNonClient()
 //
 void AwtWindow::RedrawNonClient()
 {
-    UINT flags = SwpFrameChangeFlags;
-    if (!HasCustomDecoration()) {
-        // With custom decorations enabled, SetWindowPos call below can cause WM_SIZE message being sent.
-        // If we're coming here from WFramePeer.initialize (as part of 'setResizable' call),
-        // WM_SIZE message processing can happen concurrently with window flags update done as part of
-        // 'setState' call), and lead to inconsistent state.
-        // So, we disable asynchronous processing in case we have custom decorations to avoid the race condition.
-        flags |= SWP_ASYNCWINDOWPOS;
-    }
-    ::SetWindowPos(GetHWnd(), (HWND) NULL, 0, 0, 0, 0, flags);
+    ::SetWindowPos(GetHWnd(), (HWND) NULL, 0, 0, 0, 0, SwpFrameChangeFlags|SWP_ASYNCWINDOWPOS);
 }
 
 int AwtWindow::GetScreenImOn() {
@@ -3452,12 +3438,16 @@ Java_java_awt_Window_initIDs(JNIEnv *env, jclass cls)
         env->GetFieldID(cls, "securityWarningWidth", "I"));
     CHECK_NULL(AwtWindow::securityWarningHeightID =
         env->GetFieldID(cls, "securityWarningHeight", "I"));
+    CHECK_NULL(AwtWindow::allowCustomTitlebarNativeActionsID =
+        env->GetFieldID(cls, "allowCustomTitlebarNativeActions", "Z"));
     CHECK_NULL(AwtWindow::getWarningStringMID =
         env->GetMethodID(cls, "getWarningString", "()Ljava/lang/String;"));
     CHECK_NULL(AwtWindow::autoRequestFocusID =
         env->GetFieldID(cls, "autoRequestFocus", "Z"));
     CHECK_NULL(AwtWindow::calculateSecurityWarningPositionMID =
         env->GetMethodID(cls, "calculateSecurityWarningPosition", "(DDDD)Ljava/awt/geom/Point2D;"));
+    CHECK_NULL(AwtWindow::getCustomTitlebarHeightMID =
+        env->GetMethodID(cls, "getCustomTitlebarHeight", "()F"));
 
     jclass windowTypeClass = env->FindClass("java/awt/Window$Type");
     CHECK_NULL(windowTypeClass);

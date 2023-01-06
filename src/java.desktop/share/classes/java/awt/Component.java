@@ -4914,7 +4914,7 @@ public abstract class Component implements ImageObserver, MenuContainer,
         {
             return;
         }
-        Frame customTitlebarFrame = e instanceof MouseEvent ?
+        Window customTitlebarWindow = e instanceof MouseEvent ?
                 updateCustomTitlebarNativeBehavior(true) : null;
 
         /*
@@ -5080,9 +5080,9 @@ public abstract class Component implements ImageObserver, MenuContainer,
             }
         }
 
-        if (customTitlebarFrame != null) {
-            customTitlebarFrame.allowCustomTitlebarNativeActions =
-                customTitlebarFrame.updatedCustomTitlebarNativeActions;
+        if (customTitlebarWindow != null) {
+            customTitlebarWindow.allowCustomTitlebarNativeActions =
+                    customTitlebarWindow.updatedCustomTitlebarNativeActions;
         }
 
         if (SunToolkit.isTouchKeyboardAutoShowEnabled() &&
@@ -10576,7 +10576,7 @@ public abstract class Component implements ImageObserver, MenuContainer,
         INPUT_METHODS_DISABLED = true;
     }
 
-    Frame updateCustomTitlebarNativeBehavior(boolean allowNativeActions) {
+    Window updateCustomTitlebarNativeBehavior(boolean allowNativeActions) {
         Container p = parent;
         if (p == null) return null;
         if ((eventMask & (AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK | AWTEvent.MOUSE_WHEEL_EVENT_MASK)) != 0 ||

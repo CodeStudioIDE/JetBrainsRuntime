@@ -4011,32 +4011,65 @@ public class Window extends Container implements Accessible {
         }
     }
 
+    // ************************** Custom titlebar support *******************************
+
+    private interface CustomTitlebar extends Serializable {
+        float height();
+    }
+
+    private CustomTitlebar customTitlebar;
+
+    // Only Frames and Dialogs support custom titlebars, so expose only these to JBR API
+    private static void setCustomTitlebar(Frame frame, CustomTitlebar titlebar) {
+        ((Window) frame).setCustomTitlebar(titlebar);
+    }
+    private static void setCustomTitlebar(Dialog dialog, CustomTitlebar titlebar) {
+        ((Window) dialog).setCustomTitlebar(titlebar);
+    }
+
+    private interface CustomTitlebarPeer {
+        CustomTitlebarPeer INSTANCE = (CustomTitlebarPeer) JBRApi.internalServiceBuilder(MethodHandles.lookup())
+                .withStatic("update", "updateCustomTitlebar", "sun.awt.windows.WFramePeer").build();
+        void update(Window target, ComponentPeer peer);
+    }
+
+    private void setCustomTitlebar(CustomTitlebar t) {
+        customTitlebar = t;
+        if (CustomTitlebarPeer.INSTANCE != null) {
+            CustomTitlebarPeer.INSTANCE.update(this, peer);
+        }
+    }
+
+    /**
+     * Convenience method for JNI access.
+     * @return 0 if there's no custom titlebar, >0 otherwise.
+     */
+    private float getCustomTitlebarHeight() {
+        CustomTitlebar t = customTitlebar;
+        return t == null ? 0.0f : Math.max(0.0f, t.height());
+    }
+
+    /**
+     * Used to allow/prevent native titlebar actions: window drag and double-click maximization.
+     */
+    transient volatile boolean allowCustomTitlebarNativeActions = false;
+    transient boolean updatedCustomTitlebarNativeActions = false;
+
+    @Override
+    Window updateCustomTitlebarNativeBehavior(boolean allowNativeActions) {
+        if (customTitlebar == null) return null;
+        updatedCustomTitlebarNativeActions = allowNativeActions;
+        return this;
+    }
+
+    // *** Following custom decorations code is kept for backward compatibility and will be removed soon. ***
+
     @Deprecated(forRemoval = true)
     private transient volatile boolean hasCustomDecoration;
     @Deprecated(forRemoval = true)
-    private transient volatile List<Map.Entry<Shape, Integer>> customDecorHitTestSpots;
-    @Deprecated(forRemoval = true)
     private transient volatile int customDecorTitleBarHeight = -1; // 0 can be a legal value when no title bar is expected
-
-    @Deprecated(forRemoval = true)
-    // called from native
-    private int hitTestCustomDecoration(int x, int y) {
-        var spots = customDecorHitTestSpots;
-        if (spots == null) return CustomWindowDecoration.NO_HIT_SPOT;
-        for (var spot : spots) {
-            if (spot.getKey().contains(x, y)) return spot.getValue();
-        }
-        return CustomWindowDecoration.NO_HIT_SPOT;
-    }
-
     @Deprecated(forRemoval = true)
     private static class CustomWindowDecoration {
-
-        CustomWindowDecoration() {
-            if (Win.INSTANCE == null && MacOS.INSTANCE == null) {
-                throw new JBRApi.ServiceNotAvailableException("Only supported on Windows and macOS");
-            }
-        }
 
         @Native public static final int
                 NO_HIT_SPOT = 0,
@@ -4049,47 +4082,35 @@ public class Window extends Container implements Accessible {
 
         void setCustomDecorationEnabled(Window window, boolean enabled) {
             window.hasCustomDecoration = enabled;
-            if (Win.INSTANCE != null) {
-                Win.INSTANCE.updateCustomDecoration(window.peer);
-            } else if (MacOS.INSTANCE != null && window.customDecorTitleBarHeight > 0f) {
-                MacOS.INSTANCE.setTitleBarHeight(window, window.peer, enabled ? window.customDecorTitleBarHeight : 0);
-            }
+            setTitlebar(window, enabled ? window.customDecorTitleBarHeight : 0);
         }
         boolean isCustomDecorationEnabled(Window window) {
             return window.hasCustomDecoration;
         }
 
-        void setCustomDecorationHitTestSpots(Window window, List<Map.Entry<Shape, Integer>> spots) {
-            window.customDecorHitTestSpots = List.copyOf(spots);
-        }
-        List<Map.Entry<Shape, Integer>> getCustomDecorationHitTestSpots(Window window) {
-            return window.customDecorHitTestSpots;
-        }
+        void setCustomDecorationHitTestSpots(Window window, List<Map.Entry<Shape, Integer>> spots) {}
+        List<Map.Entry<Shape, Integer>> getCustomDecorationHitTestSpots(Window window) { return List.of(); }
 
         void setCustomDecorationTitleBarHeight(Window window, int height) {
-            if (height >= 0) {
-                window.customDecorTitleBarHeight = height;
-                if (MacOS.INSTANCE != null && window.hasCustomDecoration) {
-                    MacOS.INSTANCE.setTitleBarHeight(window, window.peer, height);
-                }
-            }
+            window.customDecorTitleBarHeight = height;
+            setTitlebar(window, window.hasCustomDecoration ? height : 0);
         }
         int getCustomDecorationTitleBarHeight(Window window) {
             return window.customDecorTitleBarHeight;
         }
 
-        private interface Win {
-            Win INSTANCE = (Win) JBRApi.internalServiceBuilder(MethodHandles.lookup())
-                    .withStatic("updateCustomDecoration", "updateCustomDecoration", "sun.awt.windows.WFramePeer").build();
-            void updateCustomDecoration(ComponentPeer peer);
-        }
-
-        private interface MacOS {
-            MacOS INSTANCE = (MacOS) JBRApi.internalServiceBuilder(MethodHandles.lookup())
-                    .withStatic("setTitleBarHeight", "setCustomDecorationTitleBarHeight", "sun.lwawt.macosx.CPlatformWindow").build();
-            void setTitleBarHeight(Window target, ComponentPeer peer, float height);
+        // Bridge from old to new API
+        private static void setTitlebar(Window window, int height) {
+            window.setCustomTitlebar(height <= 0 ? null : new CustomTitlebar() {
+                @Override
+                public float height() {
+                    return height;
+                }
+            });
         }
     }
+
+    // ************************** JBR stuff *******************************
 
     private volatile boolean ignoreMouseEvents;
 

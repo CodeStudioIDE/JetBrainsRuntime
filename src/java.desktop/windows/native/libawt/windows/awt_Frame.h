@@ -49,8 +49,6 @@ public:
     };
 
     /* java.awt.Frame fields and method IDs */
-    static jclass frameCID;
-    static jfieldID allowCustomTitlebarNativeActionsID;
     static jfieldID undecoratedID;
 
     /* sun.awt.windows.WEmbeddedFrame fields and method IDs */
@@ -150,6 +148,7 @@ public:
     static void _SetIMMOption(void *param);
     static void _SynthesizeWmActivate(void *param);
     static void _NotifyModalBlocked(void *param);
+    static void _UpdateCustomTitlebar(void *param);
 
     virtual void Reshape(int x, int y, int width, int height);
 
@@ -161,7 +160,8 @@ public:
     INLINE HWND GetImeTargetComponent() { return m_imeTargetComponent; }
     INLINE void SetImeTargetComponent(HWND hwnd) { m_imeTargetComponent = hwnd; }
 
-    BOOL HasCustomDecoration();
+    void RedrawNonClient();
+    BOOL HasCustomTitlebar();
 
 protected:
     /* The frame is undecorated. */
@@ -226,6 +226,9 @@ private:
     WPARAM grabbedHitTest;
     POINT savedMousePos;
 
+    float customTitlebarHeight;
+
+    float GetCustomTitlebarHeight();
     BOOL AreCustomTitlebarNativeActionsAllowed();
     void SendMessageAtPoint(UINT msg, WPARAM w, int x, int y);
     RECT GetSysInsets();

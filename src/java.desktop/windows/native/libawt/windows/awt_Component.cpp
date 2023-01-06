@@ -767,11 +767,15 @@ jobject AwtComponent::FindHeavyweightUnderCursor(BOOL useCache) {
             INT nHittest = (INT)::SendMessage(hit, WM_NCHITTEST,
                                           0, MAKELPARAM(p.x, p.y));
 
-            if (nHittest == HTCAPTION && comp->HasCustomDecoration()) {
-                // In case of custom titlebar, WindowFromPoint will return root frame, so search further
-                ScreenToBottommostChild(hit, p.x, p.y);
-                comp = AwtComponent::GetComponent(hit);
-                if (comp != NULL) nHittest = HTCLIENT;
+            if (nHittest == HTCAPTION) {
+                AwtWindow* window = comp->GetContainer();
+                if (window != NULL && !window->IsSimpleWindow() &&
+                    ((AwtFrame*) window)->HasCustomTitlebar()) {
+                    // In case of custom titlebar, WindowFromPoint will return root frame, so search further
+                    ScreenToBottommostChild(hit, p.x, p.y);
+                    comp = AwtComponent::GetComponent(hit);
+                    if (comp != NULL) nHittest = HTCLIENT;
+                }
             }
 
             /*
@@ -1785,7 +1789,9 @@ LRESULT AwtComponent::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
               if (AwtComponent* comp =
                                     AwtComponent::GetComponent((HWND)wParam)) {
                   if (LOWORD(lParam) == HTCAPTION) {
-                      if (!comp->HasCustomDecoration()) break;
+                      AwtWindow* window = comp->GetContainer();
+                      if (window == NULL || window->IsSimpleWindow() ||
+                          !((AwtFrame*) window)->HasCustomTitlebar()) break;
                       // When custom titlebar is enabled, WM_SETCURSOR is sent to root Frame, so find actual component under cursor
                       HWND hwnd = (HWND) wParam;
                       POINT p;
@@ -4784,7 +4790,7 @@ MsgRouting AwtComponent::WmNcHitTest(int x, int y, LRESULT &retVal)
     AwtWindow* window = GetContainer();
     if (window == NULL || window->IsSimpleWindow()) return mrDoDefault;
     AwtFrame* frame = (AwtFrame*)window;
-    if (frame->HasCustomDecoration() &&
+    if (frame->HasCustomTitlebar() &&
         frame->WmNcHitTest(x, y, retVal) == mrConsume) {
         retVal = HTTRANSPARENT;
         return mrConsume;
