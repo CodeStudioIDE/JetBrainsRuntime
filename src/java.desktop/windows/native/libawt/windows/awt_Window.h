@@ -56,7 +56,8 @@ public:
     static jfieldID autoRequestFocusID;
     static jfieldID securityWarningWidthID;
     static jfieldID securityWarningHeightID;
-    static jfieldID allowCustomTitlebarNativeActionsID;
+    static jfieldID customTitlebarHitTestID;
+    static jfieldID customTitlebarHitTestQueryID;
 
     /* sun.awt.windows.WWindowPeer field and method IDs */
     static jfieldID windowTypeID;

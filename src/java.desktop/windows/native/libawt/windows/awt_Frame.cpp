@@ -37,6 +37,7 @@
 #include <dwmapi.h>
 
 #include <java_lang_Integer.h>
+#include <java_awt_Window_CustomTitlebar.h>
 #include <sun_awt_windows_WEmbeddedFrame.h>
 #include <sun_awt_windows_WEmbeddedFramePeer.h>
 
@@ -94,6 +95,35 @@ struct BlockedThreadStruct {
 
 static bool SetFocusToPluginControl(HWND hwndPlugin);
 
+struct WmMouseMessage {
+    UINT flags, mouseUp, mouseDown;
+};
+static WmMouseMessage MouseButtonToWm(int button) {
+    button &= ~DBL_CLICK; // Delete double click modifier
+    WmMouseMessage msg {AwtComponent::GetButtonMK(button), 0, 0};
+    switch (button) {
+        case LEFT_BUTTON:
+            msg.mouseDown = WM_LBUTTONDOWN;
+            msg.mouseUp = WM_LBUTTONUP;
+            break;
+        case MIDDLE_BUTTON:
+            msg.mouseDown = WM_MBUTTONDOWN;
+            msg.mouseUp = WM_MBUTTONUP;
+            break;
+        case RIGHT_BUTTON:
+            msg.mouseDown = WM_RBUTTONDOWN;
+            msg.mouseUp = WM_RBUTTONUP;
+            break;
+        case X1_BUTTON:
+        case X2_BUTTON:
+            msg.mouseDown = WM_XBUTTONDOWN;
+            msg.mouseUp = WM_XBUTTONUP;
+            msg.flags = MAKEWPARAM(msg.flags, button == X1_BUTTON ? 1 : 2);
+            break;
+    }
+    return msg;
+}
+
 /************************************************************************
  * AwtFrame fields
  */
@@ -132,6 +162,7 @@ AwtFrame::AwtFrame() {
     isInManualMoveOrSize = FALSE;
     grabbedHitTest = 0;
     customTitlebarHeight = -1.0f; // Negative means uninitialized
+    customTitlebarTouchDragPosition = (LPARAM) -1;
 }
 
 AwtFrame::~AwtFrame()
@@ -574,27 +605,21 @@ MsgRouting AwtFrame::WmMouseMove(UINT flags, int x, int y) {
 }
 
 MsgRouting AwtFrame::WmNcMouseUp(WPARAM hitTest, int x, int y, int button) {
-    if (hitTest == HTCAPTION && HasCustomTitlebar()) {
-        int b = button & ~DBL_CLICK; // Delete double click modifier
-        UINT flags = GetButtonMK(b);
-        UINT msg;
-        switch (b) {
-            case LEFT_BUTTON:
-                msg = WM_LBUTTONUP;
-                break;
-            case MIDDLE_BUTTON:
-                msg = WM_MBUTTONUP;
-                break;
-            case RIGHT_BUTTON:
-                msg = WM_RBUTTONUP;
-                break;
-            case X1_BUTTON:
-            case X2_BUTTON:
-                msg = WM_XBUTTONUP;
-                flags = MAKEWPARAM(flags, b == X1_BUTTON ? 1 : 2);
-                break;
+    customTitlebarTouchDragPosition = (LPARAM) -1;
+    if (IsTitlebarHitTest(hitTest) && HasCustomTitlebar()) {
+        WmMouseMessage msg = MouseButtonToWm(button);
+        if (IsMouseEventFromTouch()) {
+            if (button & LEFT_BUTTON) {
+                // We didn't send MouseDown event in NcMouseDown, so send it here.
+                msg.flags |= MK_NOCAPTURE;
+                SendMessageAtPoint(msg.mouseDown, msg.flags, x, y);
+            } else {
+                // We shouldn't get there, but just in case...
+                // We have already sent MouseDown and MouseUp events in NcMouseDown, so nothing to do here.
+                return mrConsume;
+            }
         }
-        SendMessageAtPoint(msg, flags, x, y);
+        SendMessageAtPoint(msg.mouseUp, msg.flags, x, y);
         return mrConsume;
     }
     if (!IsFocusableWindow() && (button & LEFT_BUTTON)) {
@@ -645,33 +670,39 @@ MsgRouting AwtFrame::WmNcMouseDown(WPARAM hitTest, int x, int y, int button) {
     if (m_grabbedWindow != NULL/* && !m_grabbedWindow->IsOneOfOwnersOf(this)*/) {
         m_grabbedWindow->Ungrab();
     }
-    if (hitTest == HTCAPTION && HasCustomTitlebar()) {
-        int b = button & ~DBL_CLICK; // Delete double click modifier
-        UINT flags = GetButtonMK(b);
+    customTitlebarTouchDragPosition = (LPARAM) -1;
+    if (IsTitlebarHitTest(hitTest) && HasCustomTitlebar()) {
         // When double-clicking titlebar of native Windows apps, they respond to second mouse press, not release
         const int LEFT_DBLCLCK = LEFT_BUTTON | DBL_CLICK;
         BOOL maximize = (button & LEFT_DBLCLCK) == LEFT_DBLCLCK && IsResizable();
         BOOL lpress = button == LEFT_BUTTON;
-        BOOL defaultAction = (maximize || lpress) && AreCustomTitlebarNativeActionsAllowed();
-        if (defaultAction) flags |= MK_NOCAPTURE;
-        UINT msg;
-        switch (b) {
-            case LEFT_BUTTON:
-                msg = WM_LBUTTONDOWN;
-                break;
-            case MIDDLE_BUTTON:
-                msg = WM_MBUTTONDOWN;
-                break;
-            case RIGHT_BUTTON:
-                msg = WM_RBUTTONDOWN;
-                break;
-            case X1_BUTTON:
-            case X2_BUTTON:
-                msg = WM_XBUTTONDOWN;
-                flags = MAKEWPARAM(flags, b == X1_BUTTON ? 1 : 2);
-                break;
+        WmMouseMessage msg = MouseButtonToWm(button);
+        if (IsMouseEventFromTouch()) {
+            msg.flags |= MK_NOCAPTURE;
+            if (button & LEFT_BUTTON) {
+                // Don't send mouse down events for left button touch for now, wait for NcMouseUp.
+                // In case of window drag we will not receive a NcMouseUp.
+                if (maximize) return AreCustomTitlebarNativeActionsAllowed() ? mrDoDefault : mrConsume;
+                if (lpress) {
+                    customTitlebarTouchDragPosition = MAKELPARAM(x, y);
+                    // Reset hit test query, we will check it in NcMouseMove
+                    JNIEnv *env = (JNIEnv *) JNU_GetEnv(jvm, JNI_VERSION_1_2);
+                    jobject target = GetTarget(env);
+                    if (target) {
+                        env->SetIntField(target, AwtWindow::customTitlebarHitTestQueryID, java_awt_Window_CustomTitlebar_HIT_UNDEFINED);
+                        env->DeleteLocalRef(target);
+                    }
+                }
+            } else {
+                // For all buttons except left originated from touch, only NcMouseDown is sent, so treat this as click.
+                SendMessageAtPoint(msg.mouseDown, msg.flags, x, y);
+                SendMessageAtPoint(msg.mouseUp, msg.flags, x, y);
+            }
+            return mrConsume;
         }
-        SendMessageAtPoint(msg, flags, x, y);
+        BOOL defaultAction = (maximize || lpress) && AreCustomTitlebarNativeActionsAllowed();
+        if (defaultAction) msg.flags |= MK_NOCAPTURE;
+        SendMessageAtPoint(msg.mouseDown, msg.flags, x, y);
         return defaultAction ? mrDoDefault : mrConsume;
     }
     if (!IsFocusableWindow() && (button & LEFT_BUTTON)) {
@@ -706,9 +737,23 @@ MsgRouting AwtFrame::WmNcMouseDown(WPARAM hitTest, int x, int y, int button) {
 }
 
 MsgRouting AwtFrame::WmNcMouseMove(WPARAM hitTest, int x, int y) {
-    // For min/max/close buttons, WM_MOUSEMOVE are the only events sent.
-    if ((hitTest == HTCAPTION || hitTest == HTMINBUTTON || hitTest == HTMAXBUTTON || hitTest == HTCLOSE) &&
-            HasCustomTitlebar()) {
+    // For min/max/close buttons, MouseMove are the only events sent to Java.
+    if (IsTitlebarHitTest(hitTest) && HasCustomTitlebar()) {
+        if (customTitlebarTouchDragPosition != (LPARAM) -1 && IsMouseEventFromTouch()) {
+            JNIEnv *env = (JNIEnv *) JNU_GetEnv(jvm, JNI_VERSION_1_2);
+            jobject target = GetTarget(env);
+            if (target) {
+                switch (env->GetIntField(target, AwtWindow::customTitlebarHitTestQueryID)) {
+                    case java_awt_Window_CustomTitlebar_HIT_UNDEFINED: break; // Hit test query is not ready yet, skip.
+                    case java_awt_Window_CustomTitlebar_HIT_TITLEBAR: // Apply drag behavior
+                        if (hitTest != HTCAPTION) break; // Native hit test didn't update yet, skip.
+                        DefWindowProc(WM_NCLBUTTONDOWN, hitTest, customTitlebarTouchDragPosition);
+                    default: // Reset drag-by-touch flag
+                        customTitlebarTouchDragPosition = (LPARAM) -1;
+                }
+                env->DeleteLocalRef(target);
+            }
+        }
         SendMessageAtPoint(WM_MOUSEMOVE, 0, x, y);
         return mrConsume;
     }
@@ -1752,20 +1797,25 @@ float AwtFrame::GetCustomTitlebarHeight() {
     return device == NULL ? h : h * device->GetScaleY();
 }
 
-BOOL AwtFrame::AreCustomTitlebarNativeActionsAllowed() {
+jint AwtFrame::GetCustomTitlebarHitTest() {
     JNIEnv *env = (JNIEnv *) JNU_GetEnv(jvm, JNI_VERSION_1_2);
     jobject target = GetTarget(env);
-    BOOL result = TRUE;
+    jint result = java_awt_Window_CustomTitlebar_HIT_UNDEFINED;
     if (target) {
-        result = env->GetBooleanField(target, AwtWindow::allowCustomTitlebarNativeActionsID);
+        result = env->GetIntField(target, AwtWindow::customTitlebarHitTestID);
         env->DeleteLocalRef(target);
     }
     return result;
 }
 
+BOOL AwtFrame::AreCustomTitlebarNativeActionsAllowed() {
+    return GetCustomTitlebarHitTest() <= java_awt_Window_CustomTitlebar_HIT_TITLEBAR;
+}
+
 void AwtFrame::SendMessageAtPoint(UINT msg, WPARAM wparam, int ncx, int ncy) {
     HWND w = GetHWnd();
     POINT p = ScreenToBottommostChild(w, ncx, ncy);
+    ::SetMessageExtraInfo((LPARAM) 0);
     ::SendMessage(w, msg, wparam, MAKELPARAM(p.x, p.y));
 }
 
@@ -1820,8 +1870,12 @@ LRESULT AwtFrame::HitTestNCA(int x, int y) {
         if (y < (rcWindow.top - rcFrame.top)) {
             captionVariant = HTTOP;
         } else {
-            captionVariant = HTCAPTION;
-//            captionVariant = AreCustomTitlebarNativeActionsAllowed() ? HTMAXBUTTON : HTCAPTION; TODO min/max/close buttons (remember to check AreCustomTitlebarNativeActionsAllowed())
+            switch (GetCustomTitlebarHitTest()) {
+                case java_awt_Window_CustomTitlebar_HIT_MINIMIZE_BUTTON: captionVariant = HTMINBUTTON; break;
+                case java_awt_Window_CustomTitlebar_HIT_MAXIMIZE_BUTTON: captionVariant = HTMAXBUTTON; break;
+                case java_awt_Window_CustomTitlebar_HIT_CLOSE_BUTTON:    captionVariant = HTCLOSE;     break;
+                default:                                                 captionVariant = HTCAPTION;   break;
+            }
         }
         uRow = 0;
     } else if (y < rcWindow.bottom &&

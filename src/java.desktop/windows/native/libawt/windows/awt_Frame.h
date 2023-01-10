@@ -162,6 +162,9 @@ public:
 
     void RedrawNonClient();
     BOOL HasCustomTitlebar();
+    static inline BOOL IsTitlebarHitTest(UINT_PTR hitTest) {
+        return hitTest == HTCAPTION || hitTest == HTMINBUTTON || hitTest == HTMAXBUTTON || hitTest == HTCLOSE;
+    }
 
 protected:
     /* The frame is undecorated. */
@@ -227,8 +230,10 @@ private:
     POINT savedMousePos;
 
     float customTitlebarHeight;
+    LPARAM customTitlebarTouchDragPosition;
 
     float GetCustomTitlebarHeight();
+    jint GetCustomTitlebarHitTest();
     BOOL AreCustomTitlebarNativeActionsAllowed();
     void SendMessageAtPoint(UINT msg, WPARAM w, int x, int y);
     RECT GetSysInsets();

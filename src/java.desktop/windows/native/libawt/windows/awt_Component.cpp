@@ -767,7 +767,7 @@ jobject AwtComponent::FindHeavyweightUnderCursor(BOOL useCache) {
             INT nHittest = (INT)::SendMessage(hit, WM_NCHITTEST,
                                           0, MAKELPARAM(p.x, p.y));
 
-            if (nHittest == HTCAPTION) {
+            if (AwtFrame::IsTitlebarHitTest(nHittest)) {
                 AwtWindow* window = comp->GetContainer();
                 if (window != NULL && !window->IsSimpleWindow() &&
                     ((AwtFrame*) window)->HasCustomTitlebar()) {
@@ -1349,11 +1349,6 @@ void SpyWinMessage(HWND hwnd, UINT message, LPCTSTR szComment) {
 
 #endif /* SPY_MESSAGES */
 
-static BOOL IsMouseEventFromTouch()
-{
-    return (::GetMessageExtraInfo() & MOUSEEVENTF_FROMTOUCH_MASK) == MOUSEEVENTF_FROMTOUCH;
-}
-
 // consider making general function
 // T getClassStaticField(cls, field, default_val)
 static BOOL IsDefaultTouch()
@@ -1785,10 +1780,10 @@ LRESULT AwtComponent::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
           }
       case WM_SETCURSOR:
           mr = mrDoDefault;
-          if (LOWORD(lParam) == HTCLIENT || LOWORD(lParam) == HTCAPTION) {
+          if (LOWORD(lParam) == HTCLIENT || AwtFrame::IsTitlebarHitTest(LOWORD(lParam))) {
               if (AwtComponent* comp =
                                     AwtComponent::GetComponent((HWND)wParam)) {
-                  if (LOWORD(lParam) == HTCAPTION) {
+                  if (AwtFrame::IsTitlebarHitTest(LOWORD(lParam))) {
                       AwtWindow* window = comp->GetContainer();
                       if (window == NULL || window->IsSimpleWindow() ||
                           !((AwtFrame*) window)->HasCustomTitlebar()) break;

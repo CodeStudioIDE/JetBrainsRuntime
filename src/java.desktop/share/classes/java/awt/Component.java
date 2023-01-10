@@ -4914,8 +4914,9 @@ public abstract class Component implements ImageObserver, MenuContainer,
         {
             return;
         }
-        Window customTitlebarWindow = e instanceof MouseEvent ?
-                updateCustomTitlebarNativeBehavior(true) : null;
+        // Custom titlebar hit test is performed by all mouse events except MOUSE_EXITED
+        Window customTitlebarWindow = e instanceof MouseEvent me && me.getID() != MouseEvent.MOUSE_EXITED ?
+                updateCustomTitlebarHitTest(true) : null;
 
         /*
          * 2. Allow the Toolkit to pass this to AWTEventListeners.
@@ -5081,8 +5082,7 @@ public abstract class Component implements ImageObserver, MenuContainer,
         }
 
         if (customTitlebarWindow != null) {
-            customTitlebarWindow.allowCustomTitlebarNativeActions =
-                    customTitlebarWindow.updatedCustomTitlebarNativeActions;
+            customTitlebarWindow.applyCustomTitlebarHitTest();
         }
 
         if (SunToolkit.isTouchKeyboardAutoShowEnabled() &&
@@ -10576,13 +10576,13 @@ public abstract class Component implements ImageObserver, MenuContainer,
         INPUT_METHODS_DISABLED = true;
     }
 
-    Window updateCustomTitlebarNativeBehavior(boolean allowNativeActions) {
+    Window updateCustomTitlebarHitTest(boolean allowNativeActions) {
         Container p = parent;
         if (p == null) return null;
         if ((eventMask & (AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK | AWTEvent.MOUSE_WHEEL_EVENT_MASK)) != 0 ||
                 mouseListener != null || mouseMotionListener != null || mouseWheelListener != null || cursor != null) {
             allowNativeActions = false;
         }
-        return p.updateCustomTitlebarNativeBehavior(allowNativeActions);
+        return p.updateCustomTitlebarHitTest(allowNativeActions);
     }
 }

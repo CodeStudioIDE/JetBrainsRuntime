@@ -171,7 +171,8 @@ jfieldID AwtWindow::locationByPlatformID;
 jfieldID AwtWindow::autoRequestFocusID;
 jfieldID AwtWindow::securityWarningWidthID;
 jfieldID AwtWindow::securityWarningHeightID;
-jfieldID AwtWindow::allowCustomTitlebarNativeActionsID;
+jfieldID AwtWindow::customTitlebarHitTestID;
+jfieldID AwtWindow::customTitlebarHitTestQueryID;
 
 jfieldID AwtWindow::windowTypeID;
 jmethodID AwtWindow::notifyWindowStateChangedMID;
@@ -3438,8 +3439,10 @@ Java_java_awt_Window_initIDs(JNIEnv *env, jclass cls)
         env->GetFieldID(cls, "securityWarningWidth", "I"));
     CHECK_NULL(AwtWindow::securityWarningHeightID =
         env->GetFieldID(cls, "securityWarningHeight", "I"));
-    CHECK_NULL(AwtWindow::allowCustomTitlebarNativeActionsID =
-        env->GetFieldID(cls, "allowCustomTitlebarNativeActions", "Z"));
+    CHECK_NULL(AwtWindow::customTitlebarHitTestID =
+        env->GetFieldID(cls, "customTitlebarHitTest", "I"));
+    CHECK_NULL(AwtWindow::customTitlebarHitTestQueryID =
+        env->GetFieldID(cls, "customTitlebarHitTestQuery", "I"));
     CHECK_NULL(AwtWindow::getWarningStringMID =
         env->GetMethodID(cls, "getWarningString", "()Ljava/lang/String;"));
     CHECK_NULL(AwtWindow::autoRequestFocusID =

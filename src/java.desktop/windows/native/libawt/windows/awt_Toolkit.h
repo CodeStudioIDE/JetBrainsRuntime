@@ -207,6 +207,10 @@ class CriticalSection {
 #ifndef MOUSEEVENTF_FROMTOUCH
 #define MOUSEEVENTF_FROMTOUCH       0xFF515700
 #endif
+
+inline BOOL IsMouseEventFromTouch() {
+    return (::GetMessageExtraInfo() & MOUSEEVENTF_FROMTOUCH_MASK) == MOUSEEVENTF_FROMTOUCH;
+}
 /************************************************************************
  * AwtToolkit class
  */

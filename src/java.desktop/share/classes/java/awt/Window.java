@@ -4015,6 +4015,13 @@ public class Window extends Container implements Accessible {
 
     private interface CustomTitlebar extends Serializable {
         float height();
+
+        @Native int HIT_UNDEFINED = 0,
+                HIT_TITLEBAR = 1,
+                HIT_CLIENT = 2,
+                HIT_MINIMIZE_BUTTON = 3,
+                HIT_MAXIMIZE_BUTTON = 4,
+                HIT_CLOSE_BUTTON = 5;
     }
 
     private CustomTitlebar customTitlebar;
@@ -4052,14 +4059,40 @@ public class Window extends Container implements Accessible {
     /**
      * Used to allow/prevent native titlebar actions: window drag and double-click maximization.
      */
-    transient volatile boolean allowCustomTitlebarNativeActions = false;
-    transient boolean updatedCustomTitlebarNativeActions = false;
+    private transient volatile int customTitlebarHitTest = CustomTitlebar.HIT_UNDEFINED;
+    /**
+     * Temporary value which will eventually substitute {@code customTitlebarHitTest}.
+     * @see #applyCustomTitlebarHitTest()
+     */
+    private transient int pendingCustomTitlebarHitTest = CustomTitlebar.HIT_UNDEFINED;
+    /**
+     * Unlike {@code customTitlebarHitTest}, {@code customTitlebarHitTestQuery} is not updated on each mouse event.
+     * Reset this to {@code CustomTitlebar.HIT_UNDEFINED} and it will be set and fixed on the next hit test update.
+     */
+    private transient volatile int customTitlebarHitTestQuery = CustomTitlebar.HIT_UNDEFINED;
 
     @Override
-    Window updateCustomTitlebarNativeBehavior(boolean allowNativeActions) {
+    Window updateCustomTitlebarHitTest(boolean allowNativeActions) {
         if (customTitlebar == null) return null;
-        updatedCustomTitlebarNativeActions = allowNativeActions;
+        pendingCustomTitlebarHitTest = allowNativeActions ? CustomTitlebar.HIT_TITLEBAR : CustomTitlebar.HIT_CLIENT;
         return this;
+    }
+
+    void applyCustomTitlebarHitTest() {
+        // Normally this will only be updated on EDT, so we don't care about non-atomic update.
+        if (customTitlebarHitTestQuery == CustomTitlebar.HIT_UNDEFINED) {
+            customTitlebarHitTestQuery = pendingCustomTitlebarHitTest;
+        }
+        customTitlebarHitTest = pendingCustomTitlebarHitTest;
+    }
+
+    private static void setCustomTitlebarHitTest(Frame frame, int value) {
+        ((Window) frame).pendingCustomTitlebarHitTest = value;
+        frame.applyCustomTitlebarHitTest();
+    }
+    private static void setCustomTitlebarHitTest(Dialog dialog, int value) {
+        ((Window) dialog).pendingCustomTitlebarHitTest = value;
+        dialog.applyCustomTitlebarHitTest();
     }
 
     // *** Following custom decorations code is kept for backward compatibility and will be removed soon. ***
