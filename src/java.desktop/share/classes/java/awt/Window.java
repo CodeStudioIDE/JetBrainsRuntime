@@ -4043,7 +4043,7 @@ public class Window extends Container implements Accessible {
     private void setCustomTitlebar(CustomTitlebar t) {
         customTitlebar = t;
         if (CustomTitlebarPeer.INSTANCE != null) {
-            CustomTitlebarPeer.INSTANCE.update(this, peer);
+            CustomTitlebarPeer.INSTANCE.update(peer);
         }
     }
 
