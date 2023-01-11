@@ -4075,6 +4075,30 @@ public class Window extends Container implements Accessible {
     Window updateCustomTitlebarHitTest(boolean allowNativeActions) {
         if (customTitlebar == null) return null;
         pendingCustomTitlebarHitTest = allowNativeActions ? CustomTitlebar.HIT_TITLEBAR : CustomTitlebar.HIT_CLIENT;
+        if (customDecorHitTestSpots != null) { // Compatibility bridge, to be removed with old API
+            // Get mouse position
+            Point p = MouseInfo.getPointerInfo().getLocation();
+            p.x -= getX();
+            p.y -= getY();
+            // Perform old-style hit test
+            int result = CustomWindowDecoration.NO_HIT_SPOT;
+            for (var spot : customDecorHitTestSpots) {
+                if (spot.getKey().contains(p.x, p.y)) {
+                    result = spot.getValue();
+                    break;
+                }
+            }
+            // Convert old hit test value to new one
+            pendingCustomTitlebarHitTest = switch (result) {
+                case CustomWindowDecoration.MINIMIZE_BUTTON -> CustomTitlebar.HIT_MINIMIZE_BUTTON;
+                case CustomWindowDecoration.MAXIMIZE_BUTTON -> CustomTitlebar.HIT_MAXIMIZE_BUTTON;
+                case CustomWindowDecoration.CLOSE_BUTTON -> CustomTitlebar.HIT_CLOSE_BUTTON;
+                case CustomWindowDecoration.NO_HIT_SPOT, CustomWindowDecoration.DRAGGABLE_AREA -> CustomTitlebar.HIT_TITLEBAR;
+                default -> CustomTitlebar.HIT_CLIENT;
+            };
+            // Overwrite hit test value
+            applyCustomTitlebarHitTest();
+        }
         return this;
     }
 
@@ -4100,6 +4124,8 @@ public class Window extends Container implements Accessible {
     @Deprecated(forRemoval = true)
     private transient volatile boolean hasCustomDecoration;
     @Deprecated(forRemoval = true)
+    private transient volatile List<Map.Entry<Shape, Integer>> customDecorHitTestSpots;
+    @Deprecated(forRemoval = true)
     private transient volatile int customDecorTitleBarHeight = -1; // 0 can be a legal value when no title bar is expected
     @Deprecated(forRemoval = true)
     private static class CustomWindowDecoration {
@@ -4121,8 +4147,12 @@ public class Window extends Container implements Accessible {
             return window.hasCustomDecoration;
         }
 
-        void setCustomDecorationHitTestSpots(Window window, List<Map.Entry<Shape, Integer>> spots) {}
-        List<Map.Entry<Shape, Integer>> getCustomDecorationHitTestSpots(Window window) { return List.of(); }
+        void setCustomDecorationHitTestSpots(Window window, List<Map.Entry<Shape, Integer>> spots) {
+            window.customDecorHitTestSpots = List.copyOf(spots);
+        }
+        List<Map.Entry<Shape, Integer>> getCustomDecorationHitTestSpots(Window window) {
+            return window.customDecorHitTestSpots;
+        }
 
         void setCustomDecorationTitleBarHeight(Window window, int height) {
             window.customDecorTitleBarHeight = height;
