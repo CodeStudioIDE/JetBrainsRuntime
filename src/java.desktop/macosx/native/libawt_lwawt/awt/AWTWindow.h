@@ -49,10 +49,10 @@
     BOOL isJustCreated;
     NSWindowTabbingMode javaWindowTabbingMode;
     BOOL isEnterFullScreen;
-    CGFloat _transparentTitleBarHeight;
-    NSMutableArray* _transparentTitleBarConstraints;
-    NSLayoutConstraint *_transparentTitleBarHeightConstraint;
-    NSMutableArray *_transparentTitleBarButtonCenterXConstraints;
+    CGFloat customTitlebarHeight;
+    NSMutableArray *customTitlebarConstraints;
+    NSLayoutConstraint *customTitlebarHeightConstraint;
+    NSMutableArray *customTitlebarButtonCenterXConstraints;
 }
 
 // An instance of either AWTWindow_Normal or AWTWindow_Panel
@@ -72,6 +72,10 @@
 @property (nonatomic) NSWindowTabbingMode javaWindowTabbingMode;
 @property (nonatomic) BOOL isEnterFullScreen;
 @property (nonatomic, retain) NSNumber *currentDisplayID;
+@property (nonatomic) CGFloat customTitlebarHeight;
+@property (nonatomic, retain) NSMutableArray *customTitlebarConstraints;
+@property (nonatomic, retain) NSLayoutConstraint *customTitlebarHeightConstraint;
+@property (nonatomic, retain) NSMutableArray *customTitlebarButtonCenterXConstraints;
 
 - (id) initWithPlatformWindow:(jobject)javaPlatformWindow
                   ownerWindow:owner

@@ -257,7 +257,7 @@ class WFramePeer extends WWindowPeer implements FramePeer {
     private native void synthesizeWmActivate(boolean activate);
 
     // JBR API internals
-    private static void updateCustomTitlebar(Window target, ComponentPeer peer) {
+    private static void updateCustomTitlebar(ComponentPeer peer) {
         // In native code AwtDialog is actually a descendant of AwtFrame,
         // so we don't distinguish between WFramePeer and WDialogPeer here,
         // just treat WFramePeer like a base class.

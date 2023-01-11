@@ -4036,8 +4036,8 @@ public class Window extends Container implements Accessible {
 
     private interface CustomTitlebarPeer {
         CustomTitlebarPeer INSTANCE = (CustomTitlebarPeer) JBRApi.internalServiceBuilder(MethodHandles.lookup())
-                .withStatic("update", "updateCustomTitlebar", "sun.awt.windows.WFramePeer").build();
-        void update(Window target, ComponentPeer peer);
+                .withStatic("update", "updateCustomTitlebar", "sun.awt.windows.WFramePeer", "sun.lwawt.macosx.CPlatformWindow").build();
+        void update(ComponentPeer peer);
     }
 
     private void setCustomTitlebar(CustomTitlebar t) {
