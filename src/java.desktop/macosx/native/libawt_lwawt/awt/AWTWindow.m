@@ -1771,7 +1771,7 @@ JNI_COCOA_EXIT(env);
  * Signature: (JII)V
  */
 JNIEXPORT void JNICALL Java_sun_lwawt_macosx_CPlatformWindow_nativeSetNSWindowStyleBits
-(JNIEnv *env, jclass clazz, jlong windowPtr, jint jmask, jint bits)
+(JNIEnv *env, jclass clazz, jlong windowPtr, jint mask, jint bits)
 {
 JNI_COCOA_ENTER(env);
 
@@ -1782,10 +1782,17 @@ JNI_COCOA_ENTER(env);
         AWTWindow *window = (AWTWindow*)[nsWindow delegate];
 
         BOOL customTitlebarEnabled = [window isCustomTitlebarEnabled];
-        jint mask = jmask;
         // scans the bit field, and only updates the values requested by the mask
         // (this implicitly handles the _CALLBACK_PROP_BITMASK case, since those are passive reads)
-        jint newBits = window.styleBits & ~mask | bits & mask;
+        jint actualBits = window.styleBits & ~mask | bits & mask;
+        jint newBits = actualBits;
+
+        if (customTitlebarEnabled) {
+            // Force these properties if custom titlebar is enabled,
+            // but store original value in self.styleBits.
+            newBits |= MASK(FULL_WINDOW_CONTENT) | MASK(TRANSPARENT_TITLE_BAR);
+            newBits &= ~MASK(TITLE_VISIBLE);
+        }
 
         BOOL resized = NO;
 
@@ -1793,7 +1800,7 @@ JNI_COCOA_ENTER(env);
         // The content view must be resized first, otherwise the window will be resized to fit the existing
         // content view.
         if (IS(mask, FULL_WINDOW_CONTENT)) {
-            if (IS(newBits, FULL_WINDOW_CONTENT) != IS(window.styleBits, FULL_WINDOW_CONTENT) && !customTitlebarEnabled) {
+            if (IS(newBits, FULL_WINDOW_CONTENT) != IS(window.styleBits, FULL_WINDOW_CONTENT) || customTitlebarEnabled) {
                 NSRect frame = [nsWindow frame];
                 NSUInteger styleMask = [AWTWindow styleMaskForStyleBits:newBits];
                 NSRect screenContentRect = [NSWindow contentRectForFrameRect:frame styleMask:styleMask];
@@ -1811,12 +1818,6 @@ JNI_COCOA_ENTER(env);
             }
         }
 
-        if (customTitlebarEnabled) {
-            // These properties cannot be changed while custom titlebar is enabled.
-            // We do want to update it in window.styleBits though
-            mask &= ~(MASK(FULL_WINDOW_CONTENT) | MASK(TRANSPARENT_TITLE_BAR) | MASK(TITLE_VISIBLE));
-        }
-
         // resets the NSWindow's style mask if the mask intersects any of those bits
         if (mask & MASK(_STYLE_PROP_BITMASK)) {
             NSWindowStyleMask styleMask = [AWTWindow styleMaskForStyleBits:newBits];
@@ -1830,7 +1831,7 @@ JNI_COCOA_ENTER(env);
             [window setPropertiesForStyleBits:newBits mask:mask];
         }
 
-        window.styleBits = newBits;
+        window.styleBits = actualBits;
 
         if (resized) {
             [window _deliverMoveResizeEvent];
