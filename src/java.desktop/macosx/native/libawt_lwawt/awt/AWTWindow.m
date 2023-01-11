@@ -1596,15 +1596,7 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
     return self;
 }
 
-- (BOOL)mouseDownCanMoveWindow {
-    return NO;
-}
-
-- (BOOL)acceptsFirstMouse:(NSEvent *)event {
-    return YES;
-}
-
-- (BOOL)areCustomTitlebarNativeActionsAllowed {
+- (BOOL) areCustomTitlebarNativeActionsAllowed {
     JNIEnv *env = [ThreadUtilities getJNIEnvUncached];
     GET_CPLATFORM_WINDOW_CLASS_RETURN(YES);
     DECLARE_FIELD_RETURN(jf_target, jc_CPlatformWindow, "target", "Ljava/awt/Window;", YES);
@@ -1624,12 +1616,48 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
     return hitTest <= java_awt_Window_CustomTitlebar_HIT_TITLEBAR;
 }
 
-- (void)mouseDown:(NSEvent *)event {
-    _dragging = NO;
-    [super mouseDown:event];
+- (BOOL) mouseDownCanMoveWindow {
+    return NO;
 }
 
-- (void)mouseDragged:(NSEvent *)event {
+- (BOOL) acceptsFirstMouse:(NSEvent *)event {
+    return YES;
+}
+
+- (BOOL) shouldDelayWindowOrderingForEvent:(NSEvent *)event {
+    return [[self.window contentView] shouldDelayWindowOrderingForEvent:event];
+}
+- (void) mouseDown: (NSEvent *)event {
+    _dragging = NO;
+    [[self.window contentView] mouseDown:event];
+}
+- (void) mouseUp: (NSEvent *)event {
+    [[self.window contentView] mouseUp:event];
+    if (event.clickCount == 2 && [self areCustomTitlebarNativeActionsAllowed]) {
+        NSString *action = [[NSUserDefaults standardUserDefaults] stringForKey:@"AppleActionOnDoubleClick"];
+        if (action != nil && [action caseInsensitiveCompare:@"Minimize"] == NSOrderedSame) {
+            [self.window performMiniaturize:nil];
+        } else if (action == nil || [action caseInsensitiveCompare:@"None"] != NSOrderedSame) { // action == "Maximize" (default)
+            [self.window performZoom:nil];
+        }
+    }
+}
+- (void) rightMouseDown: (NSEvent *)event {
+    [[self.window contentView] rightMouseDown:event];
+}
+- (void) rightMouseUp: (NSEvent *)event {
+    [[self.window contentView] rightMouseUp:event];
+}
+- (void) otherMouseDown: (NSEvent *)event {
+    [[self.window contentView] otherMouseDown:event];
+}
+- (void) otherMouseUp: (NSEvent *)event {
+    [[self.window contentView] otherMouseUp:event];
+}
+- (void) mouseMoved: (NSEvent *)event {
+    [[self.window contentView] mouseMoved:event];
+}
+- (void) mouseDragged: (NSEvent *)event {
     if (!_dragging) {
         _dragging = YES;
         if ([self areCustomTitlebarNativeActionsAllowed]) {
@@ -1637,18 +1665,34 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
             return;
         }
     }
-    [super mouseDragged:event];
+    [[self.window contentView] mouseDragged:event];
 }
-
-- (void)mouseUp:(NSEvent *)event {
-    [super mouseUp:event];
-    if (event.clickCount == 2 && [self areCustomTitlebarNativeActionsAllowed]) {
-        if ([[[NSUserDefaults standardUserDefaults] stringForKey:@"AppleActionOnDoubleClick"] isEqualToString:@"Maximize"]) {
-            [self.window performZoom:nil];
-        } else {
-            [self.window performMiniaturize:nil];
-        }
-    }
+- (void) rightMouseDragged: (NSEvent *)event {
+    [[self.window contentView] rightMouseDragged:event];
+}
+- (void) otherMouseDragged: (NSEvent *)event {
+    [[self.window contentView] otherMouseDragged:event];
+}
+- (void) mouseEntered: (NSEvent *)event {
+    [[self.window contentView] mouseEntered:event];
+}
+- (void) mouseExited: (NSEvent *)event {
+    [[self.window contentView] mouseExited:event];
+}
+- (void) scrollWheel: (NSEvent*) event {
+    [[self.window contentView] scrollWheel:event];
+}
+- (void) keyDown: (NSEvent *)event {
+    [[self.window contentView] keyDown:event];
+}
+- (void) keyUp: (NSEvent *)event {
+    [[self.window contentView] keyUp:event];
+}
+- (void) flagsChanged: (NSEvent *)event {
+    [[self.window contentView] flagsChanged:event];
+}
+- (BOOL) performKeyEquivalent: (NSEvent *) event {
+    return [[self.window contentView] performKeyEquivalent:event];
 }
 
 @end
