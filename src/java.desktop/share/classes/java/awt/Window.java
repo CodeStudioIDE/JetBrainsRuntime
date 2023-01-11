@@ -4015,6 +4015,7 @@ public class Window extends Container implements Accessible {
 
     private interface CustomTitlebar extends Serializable {
         float height();
+        boolean hideControls();
 
         @Native int HIT_UNDEFINED = 0,
                 HIT_TITLEBAR = 1,
@@ -4054,6 +4055,14 @@ public class Window extends Container implements Accessible {
     private float getCustomTitlebarHeight() {
         CustomTitlebar t = customTitlebar;
         return t == null ? 0.0f : Math.max(0.0f, t.height());
+    }
+    /**
+     * Convenience method for JNI access.
+     * @return false if there's no custom titlebar
+     */
+    private boolean areCustomTitlebarControlsHidden() {
+        CustomTitlebar t = customTitlebar;
+        return t != null && t.hideControls();
     }
 
     /**
@@ -4168,6 +4177,11 @@ public class Window extends Container implements Accessible {
                 @Override
                 public float height() {
                     return height;
+                }
+                @Override
+                public boolean hideControls() {
+                    // In old API versions there were no control buttons on Windows.
+                    return System.getProperty("os.name").toLowerCase().contains("win");
                 }
             });
         }

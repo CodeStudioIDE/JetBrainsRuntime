@@ -1299,7 +1299,6 @@ AWT_ASSERT_APPKIT_THREAD;
 
     if ([self isCustomTitlebarEnabled]) {
         [self setUpCustomTitlebar];
-        [self setWindowControlsHidden:NO];
     }
 
     JNIEnv *env = [ThreadUtilities getJNIEnv];
@@ -1482,6 +1481,25 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
     }];
 
     [NSLayoutConstraint activateConstraints:customTitlebarConstraints];
+
+    // Update window controls visibility
+    JNIEnv *env = [ThreadUtilities getJNIEnvUncached];
+    GET_CPLATFORM_WINDOW_CLASS();
+    DECLARE_FIELD(jf_target, jc_CPlatformWindow, "target", "Ljava/awt/Window;");
+    DECLARE_CLASS(jc_Window, "java/awt/Window");
+    DECLARE_METHOD(jm_areCustomTitlebarControlsHidden, jc_Window, "areCustomTitlebarControlsHidden", "()Z");
+    jobject platformWindow = (*env)->NewLocalRef(env, self.javaPlatformWindow);
+    BOOL hideControls = NO;
+    if (platformWindow) {
+        jobject target = (*env)->GetObjectField(env, platformWindow, jf_target);
+        if (target) {
+            hideControls = (BOOL) (*env)->CallBooleanMethod(env, target, jm_areCustomTitlebarControlsHidden);
+            (*env)->DeleteLocalRef(env, target);
+        }
+        (*env)->DeleteLocalRef(env, platformWindow);
+    }
+    CHECK_EXCEPTION();
+    [self setWindowControlsHidden:hideControls];
 }
 
 - (void) updateCustomTitlebarConstraints {
@@ -1530,7 +1548,9 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
 }
 
 - (void) setWindowControlsHidden: (BOOL) hidden {
-    [self.nsWindow standardWindowButton:NSWindowCloseButton].superview.hidden = hidden;
+    [self.nsWindow standardWindowButton:NSWindowCloseButton].hidden = hidden;
+    [self.nsWindow standardWindowButton:NSWindowZoomButton].hidden = hidden;
+    [self.nsWindow standardWindowButton:NSWindowMiniaturizeButton].hidden = hidden;
 }
 
 - (BOOL) isFullScreen {
@@ -1608,7 +1628,7 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
     jint hitTest = java_awt_Window_CustomTitlebar_HIT_UNDEFINED;
     jobject target = (*env)->GetObjectField(env, platformWindow, jf_target);
     if (target) {
-        hitTest = (BOOL) (*env)->GetIntField(env, target, jf_customTitlebarHitTest);
+        hitTest = (jint) (*env)->GetIntField(env, target, jf_customTitlebarHitTest);
         (*env)->DeleteLocalRef(env, target);
     }
     CHECK_EXCEPTION();
