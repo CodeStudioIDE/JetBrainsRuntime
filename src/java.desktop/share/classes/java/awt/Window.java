@@ -4085,10 +4085,8 @@ public class Window extends Container implements Accessible {
         if (customTitlebar == null) return null;
         pendingCustomTitlebarHitTest = allowNativeActions ? CustomTitlebar.HIT_TITLEBAR : CustomTitlebar.HIT_CLIENT;
         if (customDecorHitTestSpots != null) { // Compatibility bridge, to be removed with old API
-            // Get mouse position
-            Point p = MouseInfo.getPointerInfo().getLocation();
-            p.x -= getX();
-            p.y -= getY();
+            Point p = getMousePosition(true);
+            if (p == null) return this;
             // Perform old-style hit test
             int result = CustomWindowDecoration.NO_HIT_SPOT;
             for (var spot : customDecorHitTestSpots) {
