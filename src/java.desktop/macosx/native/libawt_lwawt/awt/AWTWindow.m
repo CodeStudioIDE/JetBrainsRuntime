@@ -1202,13 +1202,13 @@ AWT_ASSERT_APPKIT_THREAD;
         GET_CPLATFORM_WINDOW_CLASS_RETURN(YES);
         DECLARE_FIELD_RETURN(jf_target, jc_CPlatformWindow, "target", "Ljava/awt/Window;", 0.0f);
         DECLARE_CLASS_RETURN(jc_Window, "java/awt/Window", 0.0f);
-        DECLARE_METHOD_RETURN(jm_getCustomTitlebarHeight, jc_Window, "getCustomTitlebarHeight", "()F", 0.0f);
+        DECLARE_FIELD_RETURN(jf_customTitlebarHeight, jc_Window, "customTitlebarHeight", "F", 0.0f);
 
         jobject platformWindow = (*env)->NewLocalRef(env, self.javaPlatformWindow);
         if (!platformWindow) return 0.0f;
         jobject target = (*env)->GetObjectField(env, platformWindow, jf_target);
         if (target) {
-            h = (CGFloat) (*env)->CallFloatMethod(env, target, jm_getCustomTitlebarHeight);
+            h = (CGFloat) (*env)->GetFloatField(env, target, jf_customTitlebarHeight);
             (*env)->DeleteLocalRef(env, target);
         }
         CHECK_EXCEPTION();
@@ -1487,19 +1487,19 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
     GET_CPLATFORM_WINDOW_CLASS();
     DECLARE_FIELD(jf_target, jc_CPlatformWindow, "target", "Ljava/awt/Window;");
     DECLARE_CLASS(jc_Window, "java/awt/Window");
-    DECLARE_METHOD(jm_areCustomTitlebarControlsHidden, jc_Window, "areCustomTitlebarControlsHidden", "()Z");
+    DECLARE_FIELD(jf_customTitlebarControlsVisible, jc_Window, "customTitlebarControlsVisible", "Z");
     jobject platformWindow = (*env)->NewLocalRef(env, self.javaPlatformWindow);
-    BOOL hideControls = NO;
+    BOOL controlsVisible = YES;
     if (platformWindow) {
         jobject target = (*env)->GetObjectField(env, platformWindow, jf_target);
         if (target) {
-            hideControls = (BOOL) (*env)->CallBooleanMethod(env, target, jm_areCustomTitlebarControlsHidden);
+            controlsVisible = (BOOL) (*env)->GetBooleanField(env, target, jf_customTitlebarControlsVisible);
             (*env)->DeleteLocalRef(env, target);
         }
         (*env)->DeleteLocalRef(env, platformWindow);
     }
     CHECK_EXCEPTION();
-    [self setWindowControlsHidden:hideControls];
+    [self setWindowControlsHidden:!controlsVisible];
 }
 
 - (void) updateCustomTitlebarConstraints {

@@ -4914,8 +4914,9 @@ public abstract class Component implements ImageObserver, MenuContainer,
         {
             return;
         }
-        // Custom titlebar hit test is performed by all mouse events except MOUSE_EXITED
-        Window customTitlebarWindow = e instanceof MouseEvent me && me.getID() != MouseEvent.MOUSE_EXITED ?
+        // Custom titlebar hit test is performed by all mouse events except MOUSE_EXITED and MOUSE_WHEEL
+        Window customTitlebarWindow = e.getID() >= MouseEvent.MOUSE_FIRST && e.getID() <= MouseEvent.MOUSE_LAST &&
+                e.getID() != MouseEvent.MOUSE_EXITED && e.getID() != MouseEvent.MOUSE_WHEEL ?
                 updateCustomTitlebarHitTest(true) : null;
 
         /*

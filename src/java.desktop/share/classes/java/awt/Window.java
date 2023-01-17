@@ -28,7 +28,10 @@ package java.awt;
 import java.awt.event.ComponentEvent;
 import java.awt.event.FocusEvent;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.event.MouseWheelEvent;
+import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowFocusListener;
 import java.awt.event.WindowListener;
@@ -39,6 +42,7 @@ import java.awt.im.InputContext;
 import java.awt.image.BufferStrategy;
 import java.awt.peer.ComponentPeer;
 import java.awt.peer.WindowPeer;
+import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.io.IOException;
 import java.io.ObjectInputStream;
@@ -61,6 +65,7 @@ import java.util.ResourceBundle;
 import java.util.Set;
 import java.util.Vector;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 
 import javax.accessibility.Accessible;
 import javax.accessibility.AccessibleContext;
@@ -795,6 +800,7 @@ public class Window extends Container implements Accessible {
                 allWindows.add(this);
             }
             super.addNotify();
+            if (customTitlebarControls != null) customTitlebarControls.addNotify();
         }
     }
 
@@ -806,6 +812,7 @@ public class Window extends Container implements Accessible {
             synchronized (allWindows) {
                 allWindows.remove(this);
             }
+            if (customTitlebarControls != null) customTitlebarControls.removeNotify();
             super.removeNotify();
         }
     }
@@ -4013,9 +4020,9 @@ public class Window extends Container implements Accessible {
 
     // ************************** Custom titlebar support *******************************
 
-    private interface CustomTitlebar extends Serializable {
+    private interface CustomTitlebar {
         float height();
-        boolean hideControls();
+        Function<String, Object> controls();
 
         @Native int HIT_UNDEFINED = 0,
                 HIT_TITLEBAR = 1,
@@ -4025,15 +4032,8 @@ public class Window extends Container implements Accessible {
                 HIT_CLOSE_BUTTON = 5;
     }
 
-    private CustomTitlebar customTitlebar;
-
-    // Only Frames and Dialogs support custom titlebars, so expose only these to JBR API
-    private static void setCustomTitlebar(Frame frame, CustomTitlebar titlebar) {
-        ((Window) frame).setCustomTitlebar(titlebar);
-    }
-    private static void setCustomTitlebar(Dialog dialog, CustomTitlebar titlebar) {
-        ((Window) dialog).setCustomTitlebar(titlebar);
-    }
+    private float customTitlebarHeight;
+    private boolean customTitlebarControlsVisible;
 
     private interface CustomTitlebarPeer {
         CustomTitlebarPeer INSTANCE = (CustomTitlebarPeer) JBRApi.internalServiceBuilder(MethodHandles.lookup())
@@ -4042,27 +4042,12 @@ public class Window extends Container implements Accessible {
     }
 
     private void setCustomTitlebar(CustomTitlebar t) {
-        customTitlebar = t;
+        customTitlebarHeight = t != null ? t.height() : 0.0f;
+        customTitlebarControlsVisible = t != null && t.controls() != null;
         if (CustomTitlebarPeer.INSTANCE != null) {
             CustomTitlebarPeer.INSTANCE.update(peer);
         }
-    }
-
-    /**
-     * Convenience method for JNI access.
-     * @return 0 if there's no custom titlebar, >0 otherwise.
-     */
-    private float getCustomTitlebarHeight() {
-        CustomTitlebar t = customTitlebar;
-        return t == null ? 0.0f : Math.max(0.0f, t.height());
-    }
-    /**
-     * Convenience method for JNI access.
-     * @return false if there's no custom titlebar
-     */
-    private boolean areCustomTitlebarControlsHidden() {
-        CustomTitlebar t = customTitlebar;
-        return t != null && t.hideControls();
+        updateCustomTitlebarControls(t != null ? t.controls() : null);
     }
 
     /**
@@ -4082,7 +4067,7 @@ public class Window extends Container implements Accessible {
 
     @Override
     Window updateCustomTitlebarHitTest(boolean allowNativeActions) {
-        if (customTitlebar == null) return null;
+        if (customTitlebarHeight <= 0.0f) return null;
         pendingCustomTitlebarHitTest = allowNativeActions ? CustomTitlebar.HIT_TITLEBAR : CustomTitlebar.HIT_CLIENT;
         if (customDecorHitTestSpots != null) { // Compatibility bridge, to be removed with old API
             Point p = getMousePosition(true);
@@ -4117,13 +4102,113 @@ public class Window extends Container implements Accessible {
         customTitlebarHitTest = pendingCustomTitlebarHitTest;
     }
 
-    private static void setCustomTitlebarHitTest(Frame frame, int value) {
-        ((Window) frame).pendingCustomTitlebarHitTest = value;
-        frame.applyCustomTitlebarHitTest();
+    // ************************** Custom titlebar controls *******************************
+
+    private interface CustomTitlebarControls {
+        CustomTitlebarControls INSTANCE = (CustomTitlebarControls) JBRApi.internalServiceBuilder(MethodHandles.lookup())
+                .withStatic("create", "create", "com.jetbrains.desktop.CustomTitlebarControls")
+                .withStatic("setToRootPane", "setCustomTitlebarControls", "javax.swing.JRootPane").build();
+        Component create(Window window, float height, Function<String, Object> params,
+                         MouseAdapter minCallback, MouseAdapter maxCallback, MouseAdapter closeCallback);
+        boolean setToRootPane(Window window, Component controls);
+
+        class Repainter extends WindowAdapter implements PropertyChangeListener {
+            private final Component controls;
+            private Repainter(Component controls) { this.controls = controls; }
+            public void propertyChange(PropertyChangeEvent evt) { controls.repaint(); }
+            public void windowStateChanged(WindowEvent e) { controls.repaint(); }
+            public void windowActivated(WindowEvent e) { controls.repaint(); }
+            public void windowDeactivated(WindowEvent e) { controls.repaint(); }
+        }
+
+        class Callback extends MouseAdapter {
+            private final Window window;
+            private final int type;
+            protected Callback(Window window, int type) { this.window = window; this.type = type; }
+            private void hit() {
+                window.pendingCustomTitlebarHitTest = type;
+                window.applyCustomTitlebarHitTest();
+            }
+            public void mouseClicked(MouseEvent e) { hit(); }
+            public void mousePressed(MouseEvent e) { hit(); }
+            public void mouseReleased(MouseEvent e) { hit(); }
+            public void mouseEntered(MouseEvent e) { hit(); }
+            public void mouseDragged(MouseEvent e) { hit(); }
+            public void mouseMoved(MouseEvent e) { hit(); }
+        }
     }
-    private static void setCustomTitlebarHitTest(Dialog dialog, int value) {
-        ((Window) dialog).pendingCustomTitlebarHitTest = value;
-        dialog.applyCustomTitlebarHitTest();
+
+    private Component customTitlebarControls;
+
+    private void updateCustomTitlebarControls(Function<String, Object> params) {
+        if (CustomTitlebarControls.INSTANCE == null) return;
+        synchronized (getTreeLock()) {
+            // Find and remove existing controls repainter, if any.
+            for (WindowListener l : getWindowListeners()) {
+                if (l instanceof CustomTitlebarControls.Repainter repainter) {
+                    removePropertyChangeListener(repainter);
+                    removeWindowStateListener(repainter);
+                    removeWindowListener(repainter);
+                    break;
+                }
+            }
+            // Set up new controls.
+            Component controls = params != null ? CustomTitlebarControls.INSTANCE.create(
+                    this, customTitlebarHeight, params,
+                    new CustomTitlebarControls.Callback(this, CustomTitlebar.HIT_MINIMIZE_BUTTON),
+                    new CustomTitlebarControls.Callback(this, CustomTitlebar.HIT_MAXIMIZE_BUTTON),
+                    new CustomTitlebarControls.Callback(this, CustomTitlebar.HIT_CLOSE_BUTTON)) : null;
+            // Try adding to layered pane.
+            if (CustomTitlebarControls.INSTANCE.setToRootPane(this, controls)) controls = null;
+            // Or add as a heavyweight child.
+            setCustomTitlebarControls(controls);
+            // Add listeners for controls repainter.
+            if(customTitlebarControls != null) {
+                CustomTitlebarControls.Repainter repainter = new CustomTitlebarControls.Repainter(customTitlebarControls);
+                addPropertyChangeListener(repainter);
+                addWindowStateListener(repainter);
+                addWindowListener(repainter);
+            }
+        }
+    }
+
+    private void setCustomTitlebarControls(Component controls) {
+        synchronized (getTreeLock()) {
+            if (customTitlebarControls != null) {
+                if (peer != null) customTitlebarControls.removeNotify();
+                customTitlebarControls.parent = null;
+                customTitlebarControls.setGraphicsConfiguration(null);
+                customTitlebarControls = null;
+            }
+            if (controls != null) {
+                customTitlebarControls = controls;
+                controls.parent = this;
+                controls.setGraphicsConfiguration(getGraphicsConfiguration());
+                layoutCustomTitlebarControls();
+                if (peer != null) controls.addNotify();
+            }
+            if (peer != null && layoutMgr == null && isVisible()) updateCursorImmediately();
+        }
+    }
+
+    private void layoutCustomTitlebarControls() {
+        Component c = customTitlebarControls;
+        if (c != null) {
+            Insets insets = getInsets();
+            Dimension s = c.getPreferredSize();
+            int y = insets.top;
+            int x = insets.left + Math.round((getWidth() - s.width - insets.left - insets.right) * c.getAlignmentX());
+            c.setBounds(x, y, s.width, s.height);
+            c.doLayout();
+            ComponentPeer p = c.peer;
+            if (p != null) p.setZOrder(null);
+        }
+    }
+
+    @Override
+    public void doLayout() {
+        super.doLayout();
+        layoutCustomTitlebarControls();
     }
 
     // *** Following custom decorations code is kept for backward compatibility and will be removed soon. ***
@@ -4172,14 +4257,12 @@ public class Window extends Container implements Accessible {
         // Bridge from old to new API
         private static void setTitlebar(Window window, int height) {
             window.setCustomTitlebar(height <= 0 ? null : new CustomTitlebar() {
-                @Override
                 public float height() {
                     return height;
                 }
-                @Override
-                public boolean hideControls() {
+                public Function<String, Object> controls() {
                     // In old API versions there were no control buttons on Windows.
-                    return System.getProperty("os.name").toLowerCase().contains("win");
+                    return System.getProperty("os.name").toLowerCase().contains("win") ? null : s -> null;
                 }
             });
         }

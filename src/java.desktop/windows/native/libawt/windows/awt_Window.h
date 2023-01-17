@@ -56,6 +56,7 @@ public:
     static jfieldID autoRequestFocusID;
     static jfieldID securityWarningWidthID;
     static jfieldID securityWarningHeightID;
+    static jfieldID customTitlebarHeightID;
     static jfieldID customTitlebarHitTestID;
     static jfieldID customTitlebarHitTestQueryID;
 
@@ -67,7 +68,6 @@ public:
     static jmethodID getWarningStringMID;
     static jmethodID calculateSecurityWarningPositionMID;
     static jmethodID windowTypeNameMID;
-    static jmethodID getCustomTitlebarHeightMID;
 
     static jfieldID sysInsetsID;
 

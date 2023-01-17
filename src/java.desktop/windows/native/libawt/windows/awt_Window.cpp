@@ -171,6 +171,7 @@ jfieldID AwtWindow::locationByPlatformID;
 jfieldID AwtWindow::autoRequestFocusID;
 jfieldID AwtWindow::securityWarningWidthID;
 jfieldID AwtWindow::securityWarningHeightID;
+jfieldID AwtWindow::customTitlebarHeightID;
 jfieldID AwtWindow::customTitlebarHitTestID;
 jfieldID AwtWindow::customTitlebarHitTestQueryID;
 
@@ -181,7 +182,6 @@ jfieldID AwtWindow::sysInsetsID;
 jmethodID AwtWindow::getWarningStringMID;
 jmethodID AwtWindow::calculateSecurityWarningPositionMID;
 jmethodID AwtWindow::windowTypeNameMID;
-jmethodID AwtWindow::getCustomTitlebarHeightMID;
 
 int AwtWindow::ms_instanceCounter = 0;
 HHOOK AwtWindow::ms_hCBTFilter;
@@ -3439,6 +3439,8 @@ Java_java_awt_Window_initIDs(JNIEnv *env, jclass cls)
         env->GetFieldID(cls, "securityWarningWidth", "I"));
     CHECK_NULL(AwtWindow::securityWarningHeightID =
         env->GetFieldID(cls, "securityWarningHeight", "I"));
+    CHECK_NULL(AwtWindow::customTitlebarHeightID =
+        env->GetFieldID(cls, "customTitlebarHeight", "F"));
     CHECK_NULL(AwtWindow::customTitlebarHitTestID =
         env->GetFieldID(cls, "customTitlebarHitTest", "I"));
     CHECK_NULL(AwtWindow::customTitlebarHitTestQueryID =
@@ -3449,8 +3451,6 @@ Java_java_awt_Window_initIDs(JNIEnv *env, jclass cls)
         env->GetFieldID(cls, "autoRequestFocus", "Z"));
     CHECK_NULL(AwtWindow::calculateSecurityWarningPositionMID =
         env->GetMethodID(cls, "calculateSecurityWarningPosition", "(DDDD)Ljava/awt/geom/Point2D;"));
-    CHECK_NULL(AwtWindow::getCustomTitlebarHeightMID =
-        env->GetMethodID(cls, "getCustomTitlebarHeight", "()F"));
 
     jclass windowTypeClass = env->FindClass("java/awt/Window$Type");
     CHECK_NULL(windowTypeClass);

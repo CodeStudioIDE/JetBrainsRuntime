@@ -620,6 +620,20 @@ MsgRouting AwtFrame::WmNcMouseUp(WPARAM hitTest, int x, int y, int button) {
             }
         }
         SendMessageAtPoint(msg.mouseUp, msg.flags, x, y);
+        if (button == LEFT_BUTTON) {
+            HWND hwnd = GetHWnd();
+            switch (hitTest) {
+                case HTCLOSE:
+                    ::SendMessage(hwnd, WM_CLOSE, 0, 0);
+                    break;
+                case HTMINBUTTON:
+                    ::ShowWindow(hwnd, SW_SHOWMINIMIZED);
+                    break;
+                case HTMAXBUTTON:
+                    ::ShowWindow(hwnd, ::IsZoomed(hwnd) ? SW_SHOWNORMAL : SW_SHOWMAXIMIZED);
+                    break;
+            }
+        }
         return mrConsume;
     }
     if (!IsFocusableWindow() && (button & LEFT_BUTTON)) {
@@ -701,7 +715,8 @@ MsgRouting AwtFrame::WmNcMouseDown(WPARAM hitTest, int x, int y, int button) {
             return mrConsume;
         }
         BOOL defaultAction = (maximize || lpress) && AreCustomTitlebarNativeActionsAllowed();
-        if (defaultAction) msg.flags |= MK_NOCAPTURE;
+        BOOL defaultControl = lpress && hitTest != HTCAPTION; // Press on min/max/close button
+        if (defaultAction || defaultControl) msg.flags |= MK_NOCAPTURE;
         SendMessageAtPoint(msg.mouseDown, msg.flags, x, y);
         return defaultAction ? mrDoDefault : mrConsume;
     }
@@ -1784,7 +1799,7 @@ float AwtFrame::GetCustomTitlebarHeight() {
         JNIEnv *env = (JNIEnv *) JNU_GetEnv(jvm, JNI_VERSION_1_2);
         jobject target = GetTarget(env);
         if (target) {
-            h = env->CallFloatMethod(target, AwtWindow::getCustomTitlebarHeightMID);
+            h = env->GetFloatField(target, AwtWindow::customTitlebarHeightID);
             env->DeleteLocalRef(target);
         }
         if (h < 0.0f) h = 0.0f;
