@@ -4256,9 +4256,14 @@ public class Window extends Container implements Accessible {
 
         // Bridge from old to new API
         private static void setTitlebar(Window window, int height) {
+            // Old API accepts titlebar height with insets, subtract it for new API.
+            // We use bottom insets here because top insets may change when toggling custom titlebar, they are usually equal.
+            int fixedHeight;
+            if (window instanceof Frame f && (f.getExtendedState() & Frame.MAXIMIZED_BOTH) != 0) fixedHeight = height - window.getInsets().bottom;
+            else fixedHeight = height;
             window.setCustomTitlebar(height <= 0 ? null : new CustomTitlebar() {
                 public float height() {
-                    return height;
+                    return fixedHeight;
                 }
                 public Function<String, Object> controls() {
                     // In old API versions there were no control buttons on Windows.

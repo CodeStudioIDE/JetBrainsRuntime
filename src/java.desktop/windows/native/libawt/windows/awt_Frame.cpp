@@ -1843,7 +1843,7 @@ RECT AwtFrame::GetSysInsets() {
     Devices::InstanceAccess devices;
     HMONITOR hmon;
     if (::IsZoomed(GetHWnd())) {
-        WINDOWPLACEMENT wp;
+        WINDOWPLACEMENT wp {sizeof(WINDOWPLACEMENT)};
         ::GetWindowPlacement(GetHWnd(), &wp);
         hmon = ::MonitorFromRect(&wp.rcNormalPosition, MONITOR_DEFAULTTONEAREST);
     } else {
@@ -1855,7 +1855,8 @@ RECT AwtFrame::GetSysInsets() {
 
     // GetSystemMetricsForDpi gives incorrect values, use AdjustWindowRectExForDpi for border metrics instead
     RECT rect = {};
-    DWORD style = IsResizable() ? WS_OVERLAPPEDWINDOW : WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME;
+    DWORD style = WS_OVERLAPPEDWINDOW & ~WS_CAPTION;
+    if (!IsResizable()) style &= ~WS_THICKFRAME;
     AwtToolkit::AdjustWindowRectExForDpi(&rect, style, FALSE, NULL, dpi);
     ::SetRect(&insets, -rect.left, -rect.top, rect.right, rect.bottom);
     return insets;
@@ -1866,23 +1867,17 @@ LRESULT AwtFrame::HitTestNCA(int x, int y) {
     HWND hwnd = GetHWnd();
 
     RECT insets = GetSysInsets();
+    if (!::IsZoomed(hwnd)) insets.top = 0;
     GetWindowRect(hwnd, &rcWindow);
-
-    // Get the frame rectangle, adjusted for the style without a caption.
-    RECT rcFrame = {};
-    AdjustWindowRectEx(&rcFrame, WS_OVERLAPPEDWINDOW & ~WS_CAPTION, FALSE, NULL);
-
-    float titlebarHeight = GetCustomTitlebarHeight();
-    if (titlebarHeight <= 0.0f) titlebarHeight = insets.top;
 
     USHORT uRow = 1;
     USHORT uCol = 1;
     LRESULT captionVariant;
 
     if (y >= rcWindow.top &&
-        y < rcWindow.top + titlebarHeight)
+        y < rcWindow.top + insets.top + GetCustomTitlebarHeight())
     {
-        if (y < (rcWindow.top - rcFrame.top)) {
+        if (y < rcWindow.top + insets.top) {
             captionVariant = HTTOP;
         } else {
             switch (GetCustomTitlebarHitTest()) {
@@ -1930,7 +1925,7 @@ MsgRouting AwtFrame::WmNcCalcSize(BOOL wParam, LPNCCALCSIZE_PARAMS lpncsp, LRESU
     rect->bottom -= insets.bottom;
 
     if (::IsZoomed(GetHWnd())) {
-        rect->top += insets.bottom;
+        rect->top += insets.top;
         // [moklev] Workaround for RIDER-27069, IDEA-211327
         if (!this->IsUndecorated()) {
             APPBARDATA abData;
@@ -1956,7 +1951,7 @@ MsgRouting AwtFrame::WmNcCalcSize(BOOL wParam, LPNCCALCSIZE_PARAMS lpncsp, LRESU
                 }
             }
             if (abData.uEdge != ABE_RIGHT) {
-                rect->right += this->ScaleUpX(1);
+                rect->right += 1;
             }
         }
     }
