@@ -1867,15 +1867,16 @@ LRESULT AwtFrame::HitTestNCA(int x, int y) {
     HWND hwnd = GetHWnd();
 
     RECT insets = GetSysInsets();
-    if (!::IsZoomed(hwnd)) insets.top = 0;
     GetWindowRect(hwnd, &rcWindow);
+
+    float titlebarHeight = GetCustomTitlebarHeight();
+    if (::IsZoomed(hwnd)) titlebarHeight += insets.top;
 
     USHORT uRow = 1;
     USHORT uCol = 1;
     LRESULT captionVariant;
 
-    if (y >= rcWindow.top &&
-        y < rcWindow.top + insets.top + GetCustomTitlebarHeight())
+    if (y >= rcWindow.top && y < rcWindow.top + titlebarHeight)
     {
         if (y < rcWindow.top + insets.top) {
             captionVariant = HTTOP;
