@@ -1250,6 +1250,9 @@ AWT_ASSERT_APPKIT_THREAD;
 - (void)windowDidEnterFullScreen:(NSNotification *)notification {
     self.isEnterFullScreen = YES;
 
+    if ([self isCustomTitlebarEnabled]) {
+        [self forceHideCustomTitlebarTitle:NO];
+    }
     [self allowMovingChildrenBetweenSpaces:NO];
     [self fullScreenTransitionFinished];
 
@@ -1273,6 +1276,7 @@ AWT_ASSERT_APPKIT_THREAD;
 
     if ([self isCustomTitlebarEnabled]) {
         [self setWindowControlsHidden:YES];
+        [self forceHideCustomTitlebarTitle:YES];
     }
 
     JNIEnv *env = [ThreadUtilities getJNIEnv];
@@ -1545,6 +1549,8 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
     customTitlebarConstraints = nil;
     customTitlebarHeightConstraint = nil;
     customTitlebarButtonCenterXConstraints = nil;
+
+    [self setWindowControlsHidden:NO];
 }
 
 - (void) setWindowControlsHidden: (BOOL) hidden {
@@ -1558,38 +1564,47 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
     return (masks & NSWindowStyleMaskFullScreen) != 0;
 }
 
+- (void) forceHideCustomTitlebarTitle: (BOOL) hide {
+    jint bits = styleBits;
+    if (hide) bits &= ~MASK(TITLE_VISIBLE);
+    [self setPropertiesForStyleBits:bits mask:MASK(TITLE_VISIBLE)];
+}
+
 - (void) updateCustomTitlebar {
     [ThreadUtilities performOnMainThreadWaiting:YES block:^(){
 
         customTitlebarHeight = -1.0f; // Reset for lazy init
         BOOL enabled = [self isCustomTitlebarEnabled];
-        if (enabled != (customTitlebarConstraints != nil)) {
+        BOOL fullscreen = [self isFullScreen];
 
-            jint mask = MASK(FULL_WINDOW_CONTENT) | MASK(TRANSPARENT_TITLE_BAR) | MASK(TITLE_VISIBLE);
-            jint newBits = styleBits;
-            if (enabled) {
-                newBits |= MASK(FULL_WINDOW_CONTENT) | MASK(TRANSPARENT_TITLE_BAR);
-                newBits &= ~MASK(TITLE_VISIBLE);
-            }
-            // Copied from nativeSetNSWindowStyleBits:
-            // The content view must be resized first, otherwise the window will be resized to fit the existing
-            // content view.
+        jint mask = MASK(FULL_WINDOW_CONTENT) | MASK(TRANSPARENT_TITLE_BAR) | MASK(TITLE_VISIBLE);
+        jint newBits = styleBits;
+        if (enabled) {
+            newBits |= MASK(FULL_WINDOW_CONTENT) | MASK(TRANSPARENT_TITLE_BAR);
+            if (!fullscreen) newBits &= ~MASK(TITLE_VISIBLE);
+        }
+        // Copied from nativeSetNSWindowStyleBits:
+        // The content view must be resized first, otherwise the window will be resized to fit the existing
+        // content view.
+        NSUInteger styleMask = [AWTWindow styleMaskForStyleBits:newBits];
+        if (!fullscreen) {
             NSRect frame = [nsWindow frame];
-            NSUInteger styleMask = [AWTWindow styleMaskForStyleBits:newBits];
             NSRect screenContentRect = [NSWindow contentRectForFrameRect:frame styleMask:styleMask];
             NSRect contentFrame = NSMakeRect(screenContentRect.origin.x - frame.origin.x,
                                              screenContentRect.origin.y - frame.origin.y,
                                              screenContentRect.size.width,
                                              screenContentRect.size.height);
             nsWindow.contentView.frame = contentFrame;
-            // NSWindowStyleMaskFullScreen bit shouldn't be updated directly
-            [nsWindow setStyleMask:(((NSWindowStyleMask) styleMask) & ~NSWindowStyleMaskFullScreen |
-                    nsWindow.styleMask & NSWindowStyleMaskFullScreen)];
-            // calls methods on NSWindow to change other properties, based on the mask
-            [self setPropertiesForStyleBits:newBits mask:mask];
-            [self _deliverMoveResizeEvent];
+        }
+        // NSWindowStyleMaskFullScreen bit shouldn't be updated directly
+        [nsWindow setStyleMask:(((NSWindowStyleMask) styleMask) & ~NSWindowStyleMaskFullScreen |
+                                nsWindow.styleMask & NSWindowStyleMaskFullScreen)];
+        // calls methods on NSWindow to change other properties, based on the mask
+        [self setPropertiesForStyleBits:newBits mask:mask];
+        if (!fullscreen) [self _deliverMoveResizeEvent];
 
-            if (!self.isFullScreen) {
+        if (enabled != (customTitlebarConstraints != nil)) {
+            if (!fullscreen) {
                 if ([self isCustomTitlebarEnabled]) {
                     [self setUpCustomTitlebar];
                 } else {
@@ -1802,6 +1817,7 @@ JNI_COCOA_ENTER(env);
         AWTWindow *window = (AWTWindow*)[nsWindow delegate];
 
         BOOL customTitlebarEnabled = [window isCustomTitlebarEnabled];
+        BOOL fullscreen = [window isFullScreen];
         // scans the bit field, and only updates the values requested by the mask
         // (this implicitly handles the _CALLBACK_PROP_BITMASK case, since those are passive reads)
         jint actualBits = window.styleBits & ~mask | bits & mask;
@@ -1811,7 +1827,7 @@ JNI_COCOA_ENTER(env);
             // Force these properties if custom titlebar is enabled,
             // but store original value in self.styleBits.
             newBits |= MASK(FULL_WINDOW_CONTENT) | MASK(TRANSPARENT_TITLE_BAR);
-            newBits &= ~MASK(TITLE_VISIBLE);
+            if (!fullscreen) newBits &= ~MASK(TITLE_VISIBLE);
         }
 
         BOOL resized = NO;
@@ -1820,7 +1836,8 @@ JNI_COCOA_ENTER(env);
         // The content view must be resized first, otherwise the window will be resized to fit the existing
         // content view.
         if (IS(mask, FULL_WINDOW_CONTENT)) {
-            if (IS(newBits, FULL_WINDOW_CONTENT) != IS(window.styleBits, FULL_WINDOW_CONTENT) || customTitlebarEnabled) {
+            if ((IS(newBits, FULL_WINDOW_CONTENT) != IS(window.styleBits, FULL_WINDOW_CONTENT) ||
+                 customTitlebarEnabled) && !fullscreen) {
                 NSRect frame = [nsWindow frame];
                 NSUInteger styleMask = [AWTWindow styleMaskForStyleBits:newBits];
                 NSRect screenContentRect = [NSWindow contentRectForFrameRect:frame styleMask:styleMask];
