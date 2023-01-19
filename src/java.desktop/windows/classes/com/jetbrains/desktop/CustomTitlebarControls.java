@@ -37,13 +37,12 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Consumer;
-import java.util.function.Function;
 
 class CustomTitlebarControls implements Serializable {
     @Serial
     private static final long serialVersionUID = -8125606075697848352L;
 
-    private static Component create(Window window, float height, Function<String, Object> params,
+    private static Component create(Window window, float height, Map<String, Object> params,
                                     MouseAdapter minCallback, MouseAdapter maxCallback, MouseAdapter closeCallback) {
         if (!(window instanceof Frame) && !(window instanceof Dialog)) return null;
         CustomTitlebarControls controls = new CustomTitlebarControls(window, height, params,
@@ -76,16 +75,16 @@ class CustomTitlebarControls implements Serializable {
     private final Container panel;
     private final IButton min, max, close;
 
-    private CustomTitlebarControls(Window window, float height, Function<String, Object> params,
+    private CustomTitlebarControls(Window window, float height, Map<String, Object> params,
                                    MouseAdapter minCallback, MouseAdapter maxCallback, MouseAdapter closeCallback) {
 
-        dark = params.apply("dark") instanceof Boolean b ? b : null;
+        dark = params.get("dark") instanceof Boolean b ? b : null;
         foreground = new EnumMap<>(State.class);
         background = new EnumMap<>(State.class);
         for (State state : State.VALUES) {
             String name = state.name().toLowerCase();
-            Object f = params.apply("foreground." + name);
-            Object b = params.apply("background." + name);
+            Object f = params.get("foreground." + name);
+            Object b = params.get("background." + name);
             if (f instanceof Color c) foreground.put(state, c);
             if (b instanceof Color c) background.put(state, c);
         }
@@ -94,7 +93,7 @@ class CustomTitlebarControls implements Serializable {
         boolean lightweight = window instanceof JFrame || window instanceof JDialog;
         boolean frame = window instanceof Frame;
         int width = frame ? 141 : 34; // Default width
-        if (params.apply("width") instanceof Number n && n.intValue() > 0) width = n.intValue();
+        if (get.apply("width") instanceof Number n && n.intValue() > 0) width = n.intValue();
         panel = lightweight ? new LPanel() : new HPanel();
         panel.setLayout(null);
         panel.setBackground(null);

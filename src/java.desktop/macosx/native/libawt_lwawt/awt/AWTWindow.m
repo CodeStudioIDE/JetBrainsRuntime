@@ -355,6 +355,7 @@ AWT_NS_WINDOW_IMPLEMENTATION
 @synthesize javaWindowTabbingMode;
 @synthesize isEnterFullScreen;
 @synthesize customTitlebarHeight;
+@synthesize customTitlebarControlsVisible;
 @synthesize customTitlebarConstraints;
 @synthesize customTitlebarHeightConstraint;
 @synthesize customTitlebarButtonCenterXConstraints;
@@ -466,6 +467,7 @@ AWT_ASSERT_APPKIT_THREAD;
     }
 
     self.customTitlebarHeight = -1.0f; // Negative means uninitialized
+    self.customTitlebarControlsVisible = YES;
     self.customTitlebarConstraints = nil;
     self.customTitlebarHeightConstraint = nil;
     self.customTitlebarButtonCenterXConstraints = nil;
@@ -1202,13 +1204,15 @@ AWT_ASSERT_APPKIT_THREAD;
         GET_CPLATFORM_WINDOW_CLASS_RETURN(YES);
         DECLARE_FIELD_RETURN(jf_target, jc_CPlatformWindow, "target", "Ljava/awt/Window;", 0.0f);
         DECLARE_CLASS_RETURN(jc_Window, "java/awt/Window", 0.0f);
-        DECLARE_FIELD_RETURN(jf_customTitlebarHeight, jc_Window, "customTitlebarHeight", "F", 0.0f);
+        DECLARE_METHOD_RETURN(jm_internalCustomTitlebarHeight, jc_Window, "internalCustomTitlebarHeight", "()F", 0.0f);
+        DECLARE_METHOD_RETURN(jm_internalCustomTitlebarControlsVisible, jc_Window, "internalCustomTitlebarControlsVisible", "()Z", 0.0f);
 
         jobject platformWindow = (*env)->NewLocalRef(env, self.javaPlatformWindow);
         if (!platformWindow) return 0.0f;
         jobject target = (*env)->GetObjectField(env, platformWindow, jf_target);
         if (target) {
-            h = (CGFloat) (*env)->GetFloatField(env, target, jf_customTitlebarHeight);
+            h = (CGFloat) (*env)->CallFloatMethod(env, target, jm_internalCustomTitlebarHeight);
+            customTitlebarControlsVisible = (BOOL) (*env)->CallBooleanMethod(env, target, jm_internalCustomTitlebarControlsVisible);
             (*env)->DeleteLocalRef(env, target);
         }
         CHECK_EXCEPTION();
@@ -1223,6 +1227,31 @@ AWT_ASSERT_APPKIT_THREAD;
     CGFloat h = customTitlebarHeight;
     if (h < 0.0f) h = [self getCustomTitlebarHeight];
     return h > 0.0f;
+}
+
+- (void) updateCustomTitlebarInsets:(BOOL)hasControls {
+    CGFloat leftInset;
+    if (hasControls) {
+        CGFloat shrinkingFactor = [self getCustomTitlebarButtonShrinkingFactor];
+        CGFloat horizontalButtonOffset = shrinkingFactor * DefaultHorizontalTitleBarButtonOffset;
+        leftInset = [self getCustomTitlebarHeight] + 2.0f * horizontalButtonOffset;
+    } else leftInset = 0.0f;
+
+    JNIEnv *env = [ThreadUtilities getJNIEnvUncached];
+    GET_CPLATFORM_WINDOW_CLASS();
+    DECLARE_FIELD(jf_target, jc_CPlatformWindow, "target", "Ljava/awt/Window;");
+    DECLARE_CLASS(jc_Window, "java/awt/Window");
+    DECLARE_METHOD(jm_internalCustomTitlebarUpdateInsets, jc_Window, "internalCustomTitlebarUpdateInsets", "(FF)V");
+
+    jobject platformWindow = (*env)->NewLocalRef(env, self.javaPlatformWindow);
+    if (!platformWindow) return;
+    jobject target = (*env)->GetObjectField(env, platformWindow, jf_target);
+    if (target) {
+        (*env)->CallVoidMethod(env, target, jm_internalCustomTitlebarUpdateInsets, (jfloat) leftInset, (jfloat) 0.0f);
+        (*env)->DeleteLocalRef(env, target);
+    }
+    CHECK_EXCEPTION();
+    (*env)->DeleteLocalRef(env, platformWindow);
 }
 
 - (void)windowWillEnterFullScreen:(NSNotification *)notification {
@@ -1252,6 +1281,7 @@ AWT_ASSERT_APPKIT_THREAD;
 
     if ([self isCustomTitlebarEnabled]) {
         [self forceHideCustomTitlebarTitle:NO];
+        [self updateCustomTitlebarInsets:NO];
     }
     [self allowMovingChildrenBetweenSpaces:NO];
     [self fullScreenTransitionFinished];
@@ -1276,6 +1306,7 @@ AWT_ASSERT_APPKIT_THREAD;
 
     if ([self isCustomTitlebarEnabled]) {
         [self setWindowControlsHidden:YES];
+        [self updateCustomTitlebarInsets:customTitlebarControlsVisible];
         [self forceHideCustomTitlebarTitle:YES];
     }
 
@@ -1452,26 +1483,23 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
     AWTWindowDragView* windowDragView = [[AWTWindowDragView alloc] initWithPlatformWindow:self.javaPlatformWindow];
     [titlebar addSubview:windowDragView positioned:NSWindowBelow relativeTo:closeButtonView];
 
-    NSArray* viewsToStretch = [titlebarContainer.subviews arrayByAddingObject:windowDragView];
-    for (NSView* view in viewsToStretch) {
+    [@[titlebar, windowDragView] enumerateObjectsUsingBlock:^(NSView* view, NSUInteger index, BOOL* stop)
+    {
         view.translatesAutoresizingMaskIntoConstraints = NO;
         [customTitlebarConstraints addObjectsFromArray:@[
-            [view.leftAnchor constraintEqualToAnchor:titlebarContainer.leftAnchor],
-            [view.rightAnchor constraintEqualToAnchor:titlebarContainer.rightAnchor],
-            [view.topAnchor constraintEqualToAnchor:titlebarContainer.topAnchor],
-            [view.bottomAnchor constraintEqualToAnchor:titlebarContainer.bottomAnchor],
+                [view.leftAnchor constraintEqualToAnchor:titlebarContainer.leftAnchor],
+                [view.rightAnchor constraintEqualToAnchor:titlebarContainer.rightAnchor],
+                [view.topAnchor constraintEqualToAnchor:titlebarContainer.topAnchor],
+                [view.bottomAnchor constraintEqualToAnchor:titlebarContainer.bottomAnchor],
         ]];
-    }
-
-    for(NSView* view in titlebar.subviews) {
-        view.translatesAutoresizingMaskIntoConstraints = NO;
-    }
+    }];
 
     CGFloat shrinkingFactor = [self getCustomTitlebarButtonShrinkingFactor];
     CGFloat horizontalButtonOffset = shrinkingFactor * DefaultHorizontalTitleBarButtonOffset;
     customTitlebarButtonCenterXConstraints = [[NSMutableArray alloc] initWithCapacity:3];
     [@[closeButtonView, miniaturizeButtonView, zoomButtonView] enumerateObjectsUsingBlock:^(NSView* button, NSUInteger index, BOOL* stop)
     {
+        button.translatesAutoresizingMaskIntoConstraints = NO;
         NSLayoutConstraint* buttonCenterXConstraint = [button.centerXAnchor constraintEqualToAnchor:titlebarContainer.leftAnchor
                                                        constant:([self getCustomTitlebarHeight] / 2.0 + (index * horizontalButtonOffset))];
         [customTitlebarButtonCenterXConstraints addObject:buttonCenterXConstraint];
@@ -1486,24 +1514,8 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
 
     [NSLayoutConstraint activateConstraints:customTitlebarConstraints];
 
-    // Update window controls visibility
-    JNIEnv *env = [ThreadUtilities getJNIEnvUncached];
-    GET_CPLATFORM_WINDOW_CLASS();
-    DECLARE_FIELD(jf_target, jc_CPlatformWindow, "target", "Ljava/awt/Window;");
-    DECLARE_CLASS(jc_Window, "java/awt/Window");
-    DECLARE_FIELD(jf_customTitlebarControlsVisible, jc_Window, "customTitlebarControlsVisible", "Z");
-    jobject platformWindow = (*env)->NewLocalRef(env, self.javaPlatformWindow);
-    BOOL controlsVisible = YES;
-    if (platformWindow) {
-        jobject target = (*env)->GetObjectField(env, platformWindow, jf_target);
-        if (target) {
-            controlsVisible = (BOOL) (*env)->GetBooleanField(env, target, jf_customTitlebarControlsVisible);
-            (*env)->DeleteLocalRef(env, target);
-        }
-        (*env)->DeleteLocalRef(env, platformWindow);
-    }
-    CHECK_EXCEPTION();
-    [self setWindowControlsHidden:!controlsVisible];
+    [self setWindowControlsHidden:!customTitlebarControlsVisible];
+    [self updateCustomTitlebarInsets:customTitlebarControlsVisible];
 }
 
 - (void) updateCustomTitlebarConstraints {
@@ -1514,6 +1526,8 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
     {
         buttonConstraint.constant = ([self getCustomTitlebarHeight] / 2.0 + (index * horizontalButtonOffset));
     }];
+    [self setWindowControlsHidden:!customTitlebarControlsVisible];
+    [self updateCustomTitlebarInsets:customTitlebarControlsVisible];
 }
 
 - (void) resetCustomTitlebar {
@@ -1530,12 +1544,9 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
     [NSLayoutConstraint deactivateConstraints:customTitlebarConstraints];
 
     AWTWindowDragView* windowDragView = nil;
-    for (NSView* view in [titlebar.subviews arrayByAddingObjectsFromArray:titlebarContainer.subviews]) {
+    for (NSView* view in titlebar.subviews) {
         if ([view isMemberOfClass:[AWTWindowDragView class]]) {
             windowDragView = view;
-        }
-        if (view.translatesAutoresizingMaskIntoConstraints == NO) {
-            view.translatesAutoresizingMaskIntoConstraints = YES;
         }
     }
 
@@ -1551,6 +1562,7 @@ static const CGFloat DefaultHorizontalTitleBarButtonOffset = 20.0;
     customTitlebarButtonCenterXConstraints = nil;
 
     [self setWindowControlsHidden:NO];
+    [self updateCustomTitlebarInsets:NO];
 }
 
 - (void) setWindowControlsHidden: (BOOL) hidden {
