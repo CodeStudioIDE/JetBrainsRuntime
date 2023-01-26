@@ -946,7 +946,6 @@ public class JRootPane extends JComponent implements Accessible {
                 menuBar.setBounds(0, 0, w, mbd.height);
                 contentY += mbd.height;
             }
-            layoutCustomTitleBarControls();
             if(contentPane != null) {
                 contentPane.setBounds(0, contentY, w, h - contentY);
             }
@@ -971,47 +970,6 @@ public class JRootPane extends JComponent implements Accessible {
      */
     protected String paramString() {
         return super.paramString();
-    }
-
-/////////////////
-// Custom title bar controls
-////////////////
-
-    private Component customTitleBarControls;
-
-    private static boolean setCustomTitleBarControls(Window window, Component controls) {
-        if (window instanceof JFrame || window instanceof JDialog) {
-            synchronized (window.getTreeLock()) {
-                JRootPane rp = ((RootPaneContainer) window).getRootPane();
-                if(rp.customTitleBarControls != null) {
-                    rp.layeredPane.remove(rp.customTitleBarControls);
-                }
-                rp.customTitleBarControls = controls;
-                if(rp.customTitleBarControls != null) {
-                    rp.layoutCustomTitleBarControls();
-                    rp.layeredPane.add(rp.customTitleBarControls, Integer.valueOf(1));
-                }
-                window.repaint();
-            }
-            return true;
-        } else return false;
-    }
-
-    private static Component getCustomTitleBarControls(Window window) {
-        if (window instanceof JFrame || window instanceof JDialog) {
-            JRootPane rp = ((RootPaneContainer) window).getRootPane();
-            return rp.customTitleBarControls;
-        } else return null;
-    }
-
-    private void layoutCustomTitleBarControls() {
-        Component c = customTitleBarControls;
-        if (c != null) {
-            Dimension s = c.getPreferredSize();
-            int x = Math.round((layeredPane.getWidth() - s.width) * c.getAlignmentX());
-            c.setBounds(x, 0, s.width, s.height);
-            customTitleBarControls.doLayout();
-        }
     }
 
 /////////////////

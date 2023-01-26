@@ -163,6 +163,7 @@ AwtFrame::AwtFrame() {
     grabbedHitTest = 0;
     customTitleBarHeight = -1.0f; // Negative means uninitialized
     customTitleBarTouchDragPosition = (LPARAM) -1;
+    customTitleBarControls = NULL;
 }
 
 AwtFrame::~AwtFrame()
@@ -371,6 +372,7 @@ AwtFrame* AwtFrame::Create(jobject self, jobject parent)
                                   self);
                 frame->RecalcNonClient();
             }
+            frame->customTitleBarControls = CustomTitleBarControls::CreateIfNeeded(frame->GetHWnd(), target, env);
         }
     } catch (...) {
         env->DeleteLocalRef(target);
@@ -408,6 +410,11 @@ LRESULT AwtFrame::ProxyWindowProc(UINT message, WPARAM wParam, LPARAM lParam, Ms
 
     AwtComponent *focusOwner = NULL;
     AwtComponent *imeTargetComponent = NULL;
+
+    if (customTitleBarControls) {
+        if (message == WM_NCMOUSELEAVE) customTitleBarControls->Hit(CustomTitleBarControls::HitType::RESET, 0, 0);
+        if (message == WM_DWMCOLORIZATIONCOLORCHANGED || message == WM_THEMECHANGED) customTitleBarControls->Update();
+    }
 
     // IME and input language related messages need to be sent to a window
     // which has the Java input focus
@@ -541,6 +548,7 @@ MsgRouting AwtFrame::WmMouseUp(UINT flags, int x, int y, int button) {
 }
 
 MsgRouting AwtFrame::WmMouseMove(UINT flags, int x, int y) {
+    if (customTitleBarControls) customTitleBarControls->Hit(CustomTitleBarControls::HitType::RESET, 0, 0);
     /**
      * If this Frame is non-focusable then we should implement move and size operation for it by
      * ourselfves because we don't dispatch appropriate mouse messages to default window procedure.
@@ -621,6 +629,10 @@ MsgRouting AwtFrame::WmNcMouseUp(WPARAM hitTest, int x, int y, int button) {
         }
         SendMessageAtPoint(msg.mouseUp, msg.flags, x, y);
         if (button == LEFT_BUTTON) {
+            if (customTitleBarControls) {
+                LRESULT ht = customTitleBarControls->Hit(CustomTitleBarControls::HitType::RELEASE, x, y);
+                if (ht != hitTest) hitTest = HTNOWHERE;
+            }
             HWND hwnd = GetHWnd();
             switch (hitTest) {
                 case HTCLOSE:
@@ -714,8 +726,12 @@ MsgRouting AwtFrame::WmNcMouseDown(WPARAM hitTest, int x, int y, int button) {
             }
             return mrConsume;
         }
-        BOOL defaultAction = (maximize || lpress) && AreCustomTitleBarNativeActionsAllowed();
+        if (customTitleBarControls) {
+            LRESULT ht = customTitleBarControls->Hit(CustomTitleBarControls::HitType::PRESS, x, y);
+            if (ht != HTNOWHERE) hitTest = ht;
+        }
         BOOL defaultControl = lpress && hitTest != HTCAPTION; // Press on min/max/close button
+        BOOL defaultAction = (maximize || lpress) && AreCustomTitleBarNativeActionsAllowed() && !defaultControl;
         if (defaultAction || defaultControl) msg.flags |= MK_NOCAPTURE;
         SendMessageAtPoint(msg.mouseDown, msg.flags, x, y);
         return defaultAction ? mrDoDefault : mrConsume;
@@ -752,6 +768,7 @@ MsgRouting AwtFrame::WmNcMouseDown(WPARAM hitTest, int x, int y, int button) {
 }
 
 MsgRouting AwtFrame::WmNcMouseMove(WPARAM hitTest, int x, int y) {
+    if (customTitleBarControls) customTitleBarControls->Hit(CustomTitleBarControls::HitType::MOVE, x, y);
     if (IsTitleBarHitTest(hitTest) && HasCustomTitleBar()) {
         if (customTitleBarTouchDragPosition != (LPARAM) -1 && IsMouseEventFromTouch()) {
             JNIEnv *env = (JNIEnv *) JNU_GetEnv(jvm, JNI_VERSION_1_2);
@@ -1034,6 +1051,7 @@ MsgRouting AwtFrame::WmWindowPosChanging(LPARAM windowPos) {
 
 MsgRouting AwtFrame::WmSize(UINT type, int w, int h)
 {
+    if (customTitleBarControls) customTitleBarControls->Update();
     currentWmSizeState = type;
     if (currentWmSizeState == SIZE_MINIMIZED) {
         UpdateSecurityWarningVisibility();
@@ -1106,6 +1124,11 @@ MsgRouting AwtFrame::WmSize(UINT type, int w, int h)
 
 MsgRouting AwtFrame::WmActivate(UINT nState, BOOL fMinimized, HWND opposite)
 {
+    if (customTitleBarControls) {
+        customTitleBarControls->Update(nState == WA_INACTIVE ?
+                                       CustomTitleBarControls::State::INACTIVE :
+                                       CustomTitleBarControls::State::NORMAL);
+    }
     jint type;
 
     if (nState != WA_INACTIVE) {
@@ -1839,8 +1862,7 @@ void AwtFrame::SendMessageAtPoint(UINT msg, WPARAM wparam, int ncx, int ncy) {
 RECT AwtFrame::GetSysInsets() {
     // GetSystemMetricsForDpi gives incorrect values, use AdjustWindowRectExForDpi for border metrics instead
     HWND hwnd = GetHWnd();
-    DWORD style = (DWORD) GetWindowLong(hwnd, GWL_STYLE);
-    DWORD exStyle = (DWORD) GetWindowLong(hwnd, GWL_EXSTYLE);
+    LONG style = GetStyle(), exStyle = GetStyleEx();
     style &= ~WS_CAPTION | WS_BORDER; // Remove caption but leave border
     UINT dpi = AwtToolkit::GetDpiForWindow(hwnd);
     RECT rect = {};
@@ -1869,11 +1891,17 @@ LRESULT AwtFrame::HitTestNCA(int x, int y) {
         if (y < rcWindow.top + insets.top) {
             captionVariant = HTTOP;
         } else {
-            switch (GetCustomTitleBarHitTest()) {
-                case java_awt_Window_CustomTitleBar_HIT_MINIMIZE_BUTTON: captionVariant = HTMINBUTTON; break;
-                case java_awt_Window_CustomTitleBar_HIT_MAXIMIZE_BUTTON: captionVariant = HTMAXBUTTON; break;
-                case java_awt_Window_CustomTitleBar_HIT_CLOSE_BUTTON:    captionVariant = HTCLOSE;     break;
-                default:                                                 captionVariant = HTCAPTION;   break;
+            captionVariant = HTNOWHERE;
+            if (customTitleBarControls) {
+                captionVariant = customTitleBarControls->Hit(CustomTitleBarControls::HitType::TEST, x, y);
+            }
+            if (captionVariant == HTNOWHERE) {
+                switch (GetCustomTitleBarHitTest()) {
+                    case java_awt_Window_CustomTitleBar_HIT_MINIMIZE_BUTTON: captionVariant = HTMINBUTTON; break;
+                    case java_awt_Window_CustomTitleBar_HIT_MAXIMIZE_BUTTON: captionVariant = HTMAXBUTTON; break;
+                    case java_awt_Window_CustomTitleBar_HIT_CLOSE_BUTTON:    captionVariant = HTCLOSE;     break;
+                    default:                                                 captionVariant = HTCAPTION;   break;
+                }
             }
         }
         uRow = 0;
@@ -1982,6 +2010,16 @@ void AwtFrame::_UpdateCustomTitleBar(void* p) {
     BOOL old = frame->HasCustomTitleBar();
     frame->customTitleBarHeight = -1.0f; // Reset to uninitialized
     if (frame->HasCustomTitleBar() != old) frame->RedrawNonClient();
+    jobject target = frame->GetTarget(env);
+    if (frame->customTitleBarControls) {
+        if (!frame->customTitleBarControls->UpdateStyle(target, env)) {
+            delete frame->customTitleBarControls;
+            frame->customTitleBarControls = NULL;
+        }
+    } else {
+        frame->customTitleBarControls = CustomTitleBarControls::CreateIfNeeded(frame->GetHWnd(), target, env);
+    }
+    env->DeleteLocalRef(target);
     ret:
     env->DeleteGlobalRef(self);
 }

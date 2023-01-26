@@ -28,10 +28,7 @@ package java.awt;
 import java.awt.event.ComponentEvent;
 import java.awt.event.FocusEvent;
 import java.awt.event.KeyEvent;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 import java.awt.event.MouseWheelEvent;
-import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowFocusListener;
 import java.awt.event.WindowListener;
@@ -42,7 +39,6 @@ import java.awt.im.InputContext;
 import java.awt.image.BufferStrategy;
 import java.awt.peer.ComponentPeer;
 import java.awt.peer.WindowPeer;
-import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.io.IOException;
 import java.io.ObjectInputStream;
@@ -801,7 +797,6 @@ public class Window extends Container implements Accessible {
                 allWindows.add(this);
             }
             super.addNotify();
-            if (customTitleBarControls != null) customTitleBarControls.addNotify();
         }
     }
 
@@ -813,7 +808,6 @@ public class Window extends Container implements Accessible {
             synchronized (allWindows) {
                 allWindows.remove(this);
             }
-            if (customTitleBarControls != null) customTitleBarControls.removeNotify();
             super.removeNotify();
         }
     }
@@ -3252,13 +3246,7 @@ public class Window extends Container implements Accessible {
                     getDefaultConfiguration();
         }
         synchronized (getTreeLock()) {
-            boolean ret = updateGraphicsData(gc);
-            Component customTitleBarControls = this.customTitleBarControls;
-            if (customTitleBarControls != null) ret |= customTitleBarControls.updateGraphicsData(gc);
-            if (ret) {
-                removeNotify();
-                addNotify();
-            }
+            super.setGraphicsConfiguration(gc);
             if (log.isLoggable(PlatformLogger.Level.FINER)) {
                 log.finer("+ Window.setGraphicsConfiguration(): new GC is \n+ " + getGraphicsConfiguration_NoClientCode() + "\n+ this is " + this);
             }
@@ -4146,7 +4134,6 @@ public class Window extends Container implements Accessible {
         if (CustomTitleBarPeer.INSTANCE != null) {
             CustomTitleBarPeer.INSTANCE.update(peer);
         }
-        updateCustomTitleBarControls(t);
     }
 
     /**
@@ -4199,131 +4186,6 @@ public class Window extends Container implements Accessible {
             customTitleBarHitTestQuery = pendingCustomTitleBarHitTest;
         }
         customTitleBarHitTest = pendingCustomTitleBarHitTest;
-    }
-
-    // ************************** Custom title bar controls *******************************
-
-    private interface CustomTitleBarControls {
-        CustomTitleBarControls INSTANCE = (CustomTitleBarControls) JBRApi.internalServiceBuilder(MethodHandles.lookup())
-                .withStatic("create", "create", "com.jetbrains.desktop.CustomTitleBarControls")
-                .withStatic("update", "update", "com.jetbrains.desktop.CustomTitleBarControls")
-                .withStatic("getFromRootPane", "getCustomTitleBarControls", "javax.swing.JRootPane")
-                .withStatic("setToRootPane",   "setCustomTitleBarControls", "javax.swing.JRootPane").build();
-
-        Component create(Window window, float height, Map<String, Object> params, float[] dstInsets,
-                         MouseAdapter minCallback, MouseAdapter maxCallback, MouseAdapter closeCallback);
-        boolean update(Component controls, float height, Map<String, Object> params);
-        Component getFromRootPane(Window window);
-        boolean setToRootPane(Window window, Component controls);
-
-        class Repainter extends WindowAdapter implements PropertyChangeListener {
-            private final Component controls;
-            private Repainter(Component controls) { this.controls = controls; }
-            public void propertyChange(PropertyChangeEvent evt) { controls.repaint(); }
-            public void windowStateChanged(WindowEvent e) { controls.repaint(); }
-            public void windowActivated(WindowEvent e) { controls.repaint(); }
-            public void windowDeactivated(WindowEvent e) { controls.repaint(); }
-        }
-
-        class Callback extends MouseAdapter {
-            private final Window window;
-            private final int type;
-            protected Callback(Window window, int type) { this.window = window; this.type = type; }
-            private void hit() {
-                window.pendingCustomTitleBarHitTest = type;
-                window.applyCustomTitleBarHitTest();
-            }
-            public void mouseClicked(MouseEvent e) { hit(); }
-            public void mousePressed(MouseEvent e) { hit(); }
-            public void mouseReleased(MouseEvent e) { hit(); }
-            public void mouseEntered(MouseEvent e) { hit(); }
-            public void mouseDragged(MouseEvent e) { hit(); }
-            public void mouseMoved(MouseEvent e) { hit(); }
-        }
-    }
-
-    private Component customTitleBarControls;
-
-    private void updateCustomTitleBarControls(CustomTitleBar t) {
-        if (CustomTitleBarControls.INSTANCE == null) return;
-        synchronized (getTreeLock()) {
-            boolean visible = t != null &&
-                    Boolean.TRUE.equals(t.getProperties().getOrDefault("controls.visible", Boolean.TRUE));
-            if (visible) {
-                // Try to update already existing controls.
-                Component old = CustomTitleBarControls.INSTANCE.getFromRootPane(this);
-                if (old == null) old = customTitleBarControls;
-                if (old != null && CustomTitleBarControls.INSTANCE.update(old, t.getHeight(), t.getProperties())) {
-                    return;
-                }
-            }
-            // Find and remove existing controls repainter, if any.
-            for (WindowListener l : getWindowListeners()) {
-                if (l instanceof CustomTitleBarControls.Repainter repainter) {
-                    removePropertyChangeListener(repainter);
-                    removeWindowStateListener(repainter);
-                    removeWindowListener(repainter);
-                    break;
-                }
-            }
-            // Set up new controls.
-            Component controls = visible ? CustomTitleBarControls.INSTANCE.create(
-                    this, t.getHeight(), t.getProperties(), t.insets,
-                    new CustomTitleBarControls.Callback(this, CustomTitleBar.HIT_MINIMIZE_BUTTON),
-                    new CustomTitleBarControls.Callback(this, CustomTitleBar.HIT_MAXIMIZE_BUTTON),
-                    new CustomTitleBarControls.Callback(this, CustomTitleBar.HIT_CLOSE_BUTTON)) : null;
-            // Try adding to layered pane.
-            if (!CustomTitleBarControls.INSTANCE.setToRootPane(this, controls)) {
-                // Or add as a heavyweight child.
-                setCustomTitleBarControls(controls);
-            }
-            // Add listeners for controls repainter.
-            if(controls != null) {
-                CustomTitleBarControls.Repainter repainter = new CustomTitleBarControls.Repainter(controls);
-                addPropertyChangeListener(repainter);
-                addWindowStateListener(repainter);
-                addWindowListener(repainter);
-            }
-        }
-    }
-
-    private void setCustomTitleBarControls(Component controls) {
-        synchronized (getTreeLock()) {
-            if (customTitleBarControls != null) {
-                if (peer != null) customTitleBarControls.removeNotify();
-                customTitleBarControls.parent = null;
-                customTitleBarControls.setGraphicsConfiguration(null);
-                customTitleBarControls = null;
-            }
-            if (controls != null) {
-                customTitleBarControls = controls;
-                controls.parent = this;
-                controls.setGraphicsConfiguration(getGraphicsConfiguration());
-                layoutCustomTitleBarControls();
-                if (peer != null) controls.addNotify();
-            }
-            if (peer != null && layoutMgr == null && isVisible()) updateCursorImmediately();
-        }
-    }
-
-    private void layoutCustomTitleBarControls() {
-        Component c = customTitleBarControls;
-        if (c != null) {
-            Insets insets = getInsets();
-            Dimension s = c.getPreferredSize();
-            int y = insets.top;
-            int x = insets.left + Math.round((getWidth() - s.width - insets.left - insets.right) * c.getAlignmentX());
-            c.setBounds(x, y, s.width, s.height);
-            c.doLayout();
-            ComponentPeer p = c.peer;
-            if (p != null) p.setZOrder(null);
-        }
-    }
-
-    @Override
-    public void doLayout() {
-        super.doLayout();
-        layoutCustomTitleBarControls();
     }
 
     // *** Following custom decorations code is kept for backward compatibility and will be removed soon. ***

@@ -172,6 +172,8 @@ AwtDialog* AwtDialog::Create(jobject peer, jobject parent)
             dialog->RecalcNonClient();
             dialog->UpdateSystemMenu();
 
+            dialog->customTitleBarControls = CustomTitleBarControls::CreateIfNeeded(dialog->GetHWnd(), target, env);
+
             /*
              * Initialize icon as inherited from parent if it exists
              */

@@ -265,4 +265,18 @@ class WFramePeer extends WWindowPeer implements FramePeer {
         }
     }
     private static native void updateCustomTitleBar(WWindowPeer peer);
+
+    // Used from native
+    private static final boolean WIN11_OR_NEWER;
+    static {
+        if ("Windows 10".equals(System.getProperty("os.name"))) {
+            WIN11_OR_NEWER = false;
+        } else {
+            int version = 10;
+            try {
+                version = (int) Double.parseDouble(System.getProperty("os.version"));
+            } catch (NullPointerException | NumberFormatException ignored) {}
+            WIN11_OR_NEWER = version >= 10;
+        }
+    }
 }

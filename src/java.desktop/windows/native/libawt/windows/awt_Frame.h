@@ -29,6 +29,7 @@
 #include "awt_Window.h"
 #include "awt_MenuBar.h" //add for multifont
 #include "awt_Toolkit.h"
+#include "jbr_CustomTitleBarControls.h"
 #include "Hashtable.h"
 
 #include "java_awt_Frame.h"
@@ -169,6 +170,8 @@ public:
 protected:
     /* The frame is undecorated. */
     BOOL m_isUndecorated;
+
+    CustomTitleBarControls* customTitleBarControls;
 
 private:
     LRESULT ProxyWindowProc(UINT message, WPARAM wParam, LPARAM lParam, MsgRouting &mr);
