@@ -207,7 +207,8 @@ namespace CustomTitleBarControlsSupport {
         UNAVAILABLE
     };
     volatile Availability availability = Availability::UNKNOWN;
-    BOOL (*ShouldSystemUseDarkMode)() = NULL;
+    LPCTSTR CLASS = L"JBRCustomTitleBarControls";
+    jmethodID jmUpdateInsets = NULL;
 
     BOOL IsAvailable() {
         if (availability != Availability::UNKNOWN) {
@@ -218,13 +219,14 @@ namespace CustomTitleBarControlsSupport {
             return availability == Availability::AVAILABLE;
         }
 
+        // Init GDI+
         ULONG_PTR startupToken;
         GdiplusStartupInput input;
         if (GdiplusStartup(&startupToken, &input, NULL) != Ok) {
-            availability = Availability::UNAVAILABLE;
-            return FALSE;
+            goto fail;
         }
 
+        // Choose Win10/11 style
         JNIEnv *env = (JNIEnv *) JNU_GetEnv(jvm, JNI_VERSION_1_2);
         BOOL win11OrNewer = JNU_GetStaticFieldByName(env, NULL, "sun/awt/windows/WFramePeer", "WIN11_OR_NEWER", "Z").z;
         if (win11OrNewer) {
@@ -235,8 +237,35 @@ namespace CustomTitleBarControlsSupport {
             DEFAULT_COLORS = DEFAULT_COLORS_WIN10;
         }
 
+        // Find internalCustomTitleBarUpdateInsets java method
+        jclass jcWindow = env->FindClass("java/awt/Window");
+        if (!jcWindow) goto fail;
+        jmUpdateInsets = env->GetMethodID(jcWindow, "internalCustomTitleBarUpdateInsets", "(FF)V");
+        env->DeleteLocalRef(jcWindow);
+        if (!jmUpdateInsets) goto fail;
+
+        // Register class
+        WNDCLASSEX wc;
+        wc.cbSize        = sizeof(WNDCLASSEX);
+        wc.style         = 0L;
+        wc.lpfnWndProc   = (WNDPROC)DefWindowProc;
+        wc.cbClsExtra    = 0;
+        wc.cbWndExtra    = 0;
+        wc.hInstance     = AwtToolkit::GetInstance().GetModuleHandle();
+        wc.hIcon         = NULL;
+        wc.hCursor       = NULL;
+        wc.hbrBackground = NULL;
+        wc.lpszMenuName  = NULL;
+        wc.lpszClassName = CLASS;
+        wc.hIconSm       = NULL;
+        RegisterClassEx(&wc);
+
         availability = Availability::AVAILABLE;
         return TRUE;
+
+        fail:
+        availability = Availability::UNAVAILABLE;
+        return FALSE;
     }
 }
 using namespace CustomTitleBarControlsSupport;
@@ -348,61 +377,43 @@ public:
     }
 };
 
-CustomTitleBarControls* CustomTitleBarControls::CreateIfNeeded(HWND parent, jobject target, JNIEnv* env) {
+void CustomTitleBarControls::Refresh(CustomTitleBarControls*& controls, HWND parent, jobject target, JNIEnv* env) {
     Style style;
     if (IsAvailable() && style.Update(target, env)) {
-        return new CustomTitleBarControls(parent, style);
-    } else {
-        return NULL;
+        if (controls) *controls->style = style;
+        else controls = new CustomTitleBarControls(parent, env->NewWeakGlobalRef(target), style);
+        controls->Update();
+    } else if (controls) {
+        delete controls;
+        controls = NULL;
     }
 }
 
-CustomTitleBarControls::CustomTitleBarControls(HWND parent, const Style& style) {
+CustomTitleBarControls::CustomTitleBarControls(HWND parent, jweak target, const Style& style) {
     this->parent = parent;
-
-    LPCTSTR CLASS = L"JBRCustomTitleBarControls";
-    WNDCLASSEX wc;
-    if (!GetClassInfoEx(AwtToolkit::GetInstance().GetModuleHandle(), CLASS, &wc)) {
-        wc.cbSize        = sizeof(WNDCLASSEX);
-        wc.style         = 0L;
-        wc.lpfnWndProc   = (WNDPROC)DefWindowProc;
-        wc.cbClsExtra    = 0;
-        wc.cbWndExtra    = 0;
-        wc.hInstance     = AwtToolkit::GetInstance().GetModuleHandle(),
-        wc.hIcon         = NULL;
-        wc.hCursor       = NULL;
-        wc.hbrBackground = NULL;
-        wc.lpszMenuName  = NULL;
-        wc.lpszClassName = CLASS;
-        wc.hIconSm       = NULL;
-        RegisterClassEx(&wc);
-    }
-
+    this->target = target;
     hwnd = CreateWindowEx(WS_EX_LAYERED | WS_EX_TRANSPARENT, CLASS, L"",
                           WS_CHILD | WS_VISIBLE,
                           0, 0, 0, 0,
                           parent, 0, AwtToolkit::GetInstance().GetModuleHandle(), 0);
-
     hit = HTNOWHERE;
     pressed = FALSE;
     windowState = State::NORMAL;
     resources = NULL;
     this->style = new Style(style);
-    Update();
 }
 
 CustomTitleBarControls::~CustomTitleBarControls() {
+    JNIEnv *env = (JNIEnv *) JNU_GetEnv(jvm, JNI_VERSION_1_2);
+    jobject target = env->NewLocalRef(this->target);
+    if (target) {
+        env->CallVoidMethod(target, jmUpdateInsets, 0.0f, 0.0f);
+        env->DeleteLocalRef(target);
+    }
+    env->DeleteWeakGlobalRef(this->target);
     DestroyWindow(hwnd);
     delete resources;
     delete style;
-}
-
-BOOL CustomTitleBarControls::UpdateStyle(jobject target, JNIEnv* env) {
-    if (style->Update(target, env)) {
-        Update();
-        return TRUE;
-    }
-    return FALSE;
 }
 
 void CustomTitleBarControls::PaintButton(Type type, State state, int x, int width, float scale, BOOL dark) {
@@ -510,6 +521,14 @@ void CustomTitleBarControls::Update(State windowState) {
     SetWindowPos(hwnd, HWND_TOP, position.x, position.y, newSize.cx, newSize.cy, 0);
     UpdateLayeredWindow(hwnd, hdcDst, &position, &newSize, resources->hdc, &ptSrc, 0, &blend, ULW_ALPHA);
     ReleaseDC(NULL, hdcDst);
+
+    // Update insets
+    JNIEnv *env = (JNIEnv *) JNU_GetEnv(jvm, JNI_VERSION_1_2);
+    jobject target = env->NewLocalRef(this->target);
+    if (target) {
+        env->CallVoidMethod(target, jmUpdateInsets, !ltr ? userWidth : 0.0f, ltr ? userWidth : 0.0f);
+        env->DeleteLocalRef(target);
+    }
 }
 
 LRESULT CustomTitleBarControls::Hit(HitType type, int ncx, int ncy) {

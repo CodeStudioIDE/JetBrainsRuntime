@@ -172,6 +172,10 @@ AwtFrame::~AwtFrame()
 
 void AwtFrame::Dispose()
 {
+    if (customTitleBarControls) {
+        delete customTitleBarControls;
+        customTitleBarControls = NULL;
+    }
     AwtWindow::Dispose();
 }
 
@@ -372,7 +376,7 @@ AwtFrame* AwtFrame::Create(jobject self, jobject parent)
                                   self);
                 frame->RecalcNonClient();
             }
-            frame->customTitleBarControls = CustomTitleBarControls::CreateIfNeeded(frame->GetHWnd(), target, env);
+            CustomTitleBarControls::Refresh(frame->customTitleBarControls, frame->GetHWnd(), target, env);
         }
     } catch (...) {
         env->DeleteLocalRef(target);
@@ -2011,14 +2015,7 @@ void AwtFrame::_UpdateCustomTitleBar(void* p) {
     frame->customTitleBarHeight = -1.0f; // Reset to uninitialized
     if (frame->HasCustomTitleBar() != old) frame->RedrawNonClient();
     jobject target = frame->GetTarget(env);
-    if (frame->customTitleBarControls) {
-        if (!frame->customTitleBarControls->UpdateStyle(target, env)) {
-            delete frame->customTitleBarControls;
-            frame->customTitleBarControls = NULL;
-        }
-    } else {
-        frame->customTitleBarControls = CustomTitleBarControls::CreateIfNeeded(frame->GetHWnd(), target, env);
-    }
+    CustomTitleBarControls::Refresh(frame->customTitleBarControls, frame->GetHWnd(), target, env);
     env->DeleteLocalRef(target);
     ret:
     env->DeleteGlobalRef(self);

@@ -58,6 +58,7 @@ private:
     class Resources;
     class Style;
 
+    jweak target;
     HWND parent, hwnd;
     Resources* resources;
     Style* style;
@@ -65,12 +66,11 @@ private:
     BOOL pressed;
     State windowState;
 
-    CustomTitleBarControls(HWND parent, const Style& style);
+    CustomTitleBarControls(HWND parent, jweak target, const Style& style);
     void PaintButton(Type type, State state, int x, int width, float scale, BOOL dark);
 
 public:
-    static CustomTitleBarControls* CreateIfNeeded(HWND parent, jobject target, JNIEnv* env);
-    BOOL UpdateStyle(jobject target, JNIEnv* env);
+    static void Refresh(CustomTitleBarControls*& controls, HWND parent, jobject target, JNIEnv* env);
     void Update(State windowState = State::UNKNOWN);
     LRESULT Hit(HitType type, int ncx, int ncy); // HTNOWHERE / HTMINBUTTON / HTMAXBUTTON / HTCLOSE
     ~CustomTitleBarControls();
