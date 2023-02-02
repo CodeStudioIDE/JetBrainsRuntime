@@ -1652,24 +1652,38 @@ LRESULT AwtComponent::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
           break;
       case WM_NCRBUTTONDOWN:
       case WM_NCRBUTTONDBLCLK:
-           mr = WmNcMouseDown(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), RIGHT_BUTTON);
-           break;
+          mr = WmNcMouseDown(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), RIGHT_BUTTON);
+          break;
+      case WM_NCRBUTTONUP:
+          mr = WmNcMouseUp(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), RIGHT_BUTTON);
+          break;
       case WM_NCMBUTTONDOWN:
       case WM_NCMBUTTONDBLCLK:
-           mr = WmNcMouseDown(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), MIDDLE_BUTTON);
-           break;
+          mr = WmNcMouseDown(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), MIDDLE_BUTTON);
+          break;
+      case WM_NCMBUTTONUP:
+          mr = WmNcMouseUp(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), MIDDLE_BUTTON);
+          break;
       case WM_NCXBUTTONDOWN:
       case WM_NCXBUTTONDBLCLK:
-           if (AwtToolkit::GetInstance().areExtraMouseButtonsEnabled()) {
-               int b = 0;
-               if (HIWORD(wParam) == 1) b = X1_BUTTON;
-               else if (HIWORD(wParam) == 2) b = X2_BUTTON;
-               if (b != 0) mr = WmNcMouseDown(LOWORD(wParam), GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), b);
-           }
-           break;
-        case WM_NCMOUSEMOVE:
-            mr = WmNcMouseMove(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
-            break;
+          if (AwtToolkit::GetInstance().areExtraMouseButtonsEnabled()) {
+              int b = 0;
+              if (HIWORD(wParam) == 1) b = X1_BUTTON;
+              else if (HIWORD(wParam) == 2) b = X2_BUTTON;
+              if (b != 0) mr = WmNcMouseDown(LOWORD(wParam), GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), b);
+          }
+          break;
+      case WM_NCXBUTTONUP:
+          if (AwtToolkit::GetInstance().areExtraMouseButtonsEnabled()) {
+              int b = 0;
+              if (HIWORD(wParam) == 1) b = X1_BUTTON;
+              else if (HIWORD(wParam) == 2) b = X2_BUTTON;
+              if (b != 0) mr = WmNcMouseUp(LOWORD(wParam), GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), b);
+          }
+          break;
+      case WM_NCMOUSEMOVE:
+          mr = WmNcMouseMove(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+          break;
       case WM_LBUTTONUP:
           if (ignoreNextLBTNUP) {
               ignoreNextLBTNUP = FALSE;
