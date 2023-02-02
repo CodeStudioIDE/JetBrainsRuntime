@@ -643,10 +643,14 @@ MsgRouting AwtFrame::WmNcMouseUp(WPARAM hitTest, int x, int y, int button) {
                     ::SendMessage(hwnd, WM_CLOSE, 0, 0);
                     break;
                 case HTMINBUTTON:
-                    ::ShowWindow(hwnd, SW_SHOWMINIMIZED);
+                    if (GetStyle() & WS_MINIMIZEBOX) {
+                        ::ShowWindow(hwnd, SW_SHOWMINIMIZED);
+                    }
                     break;
                 case HTMAXBUTTON:
-                    ::ShowWindow(hwnd, ::IsZoomed(hwnd) ? SW_SHOWNORMAL : SW_SHOWMAXIMIZED);
+                    if (GetStyle() & WS_MAXIMIZEBOX) {
+                        ::ShowWindow(hwnd, ::IsZoomed(hwnd) ? SW_SHOWNORMAL : SW_SHOWMAXIMIZED);
+                    }
                     break;
             }
         }
