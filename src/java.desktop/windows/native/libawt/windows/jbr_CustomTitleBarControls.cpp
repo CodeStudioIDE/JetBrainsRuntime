@@ -1,10 +1,12 @@
 /*
- * Copyright 2000-2023 JetBrains s.r.o.
+ * Copyright 2023 JetBrains s.r.o.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
- * published by the Free Software Foundation.
+ * published by the Free Software Foundation. Oracle designates this
+ * particular file as subject to the "Classpath" exception as provided
+ * by Oracle in the LICENSE file that accompanied this code.
  *
  * This code is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -351,9 +353,9 @@ class CustomTitleBarControls::Style {
     }
 
 public:
-    float height, width;
-    int dark;
-    ButtonColors colors;
+    float height {0}, width {0};
+    int dark {0};
+    ButtonColors colors {};
 
     bool Update(jobject target, JNIEnv* env) {
         jobject titleBar = JNU_GetFieldByName(env, nullptr, target, "customTitleBar", "Ljava/awt/Window$CustomTitleBar;").l;
@@ -399,7 +401,7 @@ void CustomTitleBarControls::Refresh(CustomTitleBarControls*& controls, HWND par
 CustomTitleBarControls::CustomTitleBarControls(HWND parent, jweak target, const Style& style) {
     this->parent = parent;
     this->target = target;
-    hwnd = CreateWindowEx(WS_EX_LAYERED | WS_EX_TRANSPARENT, CLASS, L"",
+    hwnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT, CLASS, L"",
                           WS_CHILD | WS_VISIBLE,
                           0, 0, 0, 0,
                           parent, nullptr, AwtToolkit::GetInstance().GetModuleHandle(), nullptr);
