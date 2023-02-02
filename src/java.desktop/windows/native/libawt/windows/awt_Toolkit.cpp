@@ -1774,7 +1774,7 @@ BOOL AwtToolkit::PreProcessMouseMsg(AwtComponent* p, MSG& msg)
     curPos.y = GET_Y_LPARAM(dwCurPos);
     HWND hWndFromPoint = ::WindowFromPoint(curPos);
     // In case of custom title bar, WindowFromPoint will return root frame, so search further just in case
-    ScreenToBottommostChild(hWndFromPoint, curPos.x, curPos.y);
+    if (hWndFromPoint) ScreenToBottommostChild(hWndFromPoint, curPos.x, curPos.y);
     // hWndFromPoint == 0 if mouse is over a scrollbar
     AwtComponent* mouseComp =
         AwtComponent::GetComponent(hWndFromPoint);
