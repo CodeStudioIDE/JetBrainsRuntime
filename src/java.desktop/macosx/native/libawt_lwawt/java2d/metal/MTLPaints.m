@@ -89,6 +89,10 @@ static void initTemplatePipelineDescriptors() {
     templateTexturePipelineDesc.vertexDescriptor.attributes[VertexAttributeTexPos].format = MTLVertexFormatFloat2;
     templateTexturePipelineDesc.vertexDescriptor.attributes[VertexAttributeTexPos].offset = 2*sizeof(float);
     templateTexturePipelineDesc.vertexDescriptor.attributes[VertexAttributeTexPos].bufferIndex = MeshVertexBuffer;
+    /* TODO: use custom buffer for color / uniforms */
+    templateTexturePipelineDesc.vertexDescriptor.attributes[VertexAttributeColPos].format = MTLVertexFormatUChar4;
+    templateTexturePipelineDesc.vertexDescriptor.attributes[VertexAttributeColPos].offset = 4*sizeof(float);
+    templateTexturePipelineDesc.vertexDescriptor.attributes[VertexAttributeColPos].bufferIndex = MeshVertexBuffer;
     templateTexturePipelineDesc.vertexDescriptor.layouts[MeshVertexBuffer].stride = sizeof(struct TxtVertex);
     templateTexturePipelineDesc.vertexDescriptor.layouts[MeshVertexBuffer].stepRate = 1;
     templateTexturePipelineDesc.vertexDescriptor.layouts[MeshVertexBuffer].stepFunction = MTLVertexStepFunctionPerVertex;
@@ -153,7 +157,10 @@ jint _color;
 
     struct FrameUniforms uf = {RGBA_TO_V4(color)};
     [encoder setVertexBytes:&uf length:sizeof(uf) atIndex:FrameUniformBuffer];
-
+/*
+    printf("setPipelineState: rpDesc: '%s' vertexShaderId: '%s' fragmentShaderId: '%s'\n",
+           [rpDesc.label cString], [vertShader cString], [fragShader cString]);
+*/
     id <MTLRenderPipelineState> pipelineState = [pipelineStateStorage getPipelineState:rpDesc
                                                                         vertexShaderId:vertShader
                                                                       fragmentShaderId:fragShader
@@ -935,6 +942,10 @@ setTxtUniforms(MTLContext *mtlc, int color, id <MTLRenderCommandEncoder> encoder
     } else {
       struct TxtFrameUniforms uf =
           {RGBA_TO_V4(color), mode, srcFlags->isOpaque, extraAlpha};
+/*
+      printf("color: %d, mode: %d opaque: %s extra!alpha: %f \n",
+             color, mode, srcFlags->isOpaque ? "true" : "false", extraAlpha);
+*/
       [encoder setFragmentBytes:&uf length:sizeof(uf) atIndex:FrameUniformBuffer];
     }
     [mtlc.samplerManager setSamplerWithEncoder:encoder interpolation:interpolation repeat:repeat];

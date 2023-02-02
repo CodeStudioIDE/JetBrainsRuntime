@@ -40,7 +40,8 @@ enum GradCycleMethod {
 enum VertexAttributes {
     VertexAttributePosition = 0,
     VertexAttributeTexPos = 1,
-    VertexAttributeITexPos = 2
+    VertexAttributeITexPos = 2,
+    VertexAttributeColPos = 3
 };
 
 enum BufferIndex  {
@@ -94,6 +95,7 @@ struct Vertex {
 struct TxtVertex {
     float position[2];
     float txtpos[2];
+    vector_uchar4 color;
 };
 
 struct AAVertex {

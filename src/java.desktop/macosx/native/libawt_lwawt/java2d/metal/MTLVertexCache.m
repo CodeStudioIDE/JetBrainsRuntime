@@ -37,33 +37,47 @@
 typedef struct _J2DVertex {
     float position[2];
     float txtpos[2];
+    unsigned char color[4];
 } J2DVertex;
 
-static J2DVertex *vertexCache = NULL;
+static J2DVertex* vertexCache = NULL;
 static jint vertexCacheIndex = 0;
 
-static MTLPooledTextureHandle * maskCacheTex = NULL;
+static MTLPooledTextureHandle* maskCacheTex = nil;
 static jint maskCacheIndex = 0;
-static id<MTLRenderCommandEncoder> encoder = NULL;
+static id<MTLRenderCommandEncoder> encoder = nil;
 
-#define MTLVC_ADD_VERTEX(TX, TY, DX, DY, DZ) \
+#define MTLVC_ADD_VERTEX(TX, TY, DX, DY, COL) \
     do { \
         J2DVertex *v = &vertexCache[vertexCacheIndex++]; \
         v->txtpos[0] = TX; \
         v->txtpos[1] = TY; \
         v->position[0]= DX; \
         v->position[1] = DY; \
+        v->color[0] = COL[0]; \
+        v->color[1] = COL[1]; \
+        v->color[2] = COL[2]; \
+        v->color[3] = COL[3]; \
     } while (0)
 
-#define MTLVC_ADD_TRIANGLES(TX1, TY1, TX2, TY2, DX1, DY1, DX2, DY2) \
+// LBO: only first color of each triangle is defined (flat mode)
+#define MTLVC_ADD_TRIANGLES(TX1, TY1, TX2, TY2, DX1, DY1, DX2, DY2, COL) \
     do { \
-        MTLVC_ADD_VERTEX(TX1, TY1, DX1, DY1, 0); \
-        MTLVC_ADD_VERTEX(TX2, TY1, DX2, DY1, 0); \
-        MTLVC_ADD_VERTEX(TX2, TY2, DX2, DY2, 0); \
-        MTLVC_ADD_VERTEX(TX2, TY2, DX2, DY2, 0); \
-        MTLVC_ADD_VERTEX(TX1, TY2, DX1, DY2, 0); \
-        MTLVC_ADD_VERTEX(TX1, TY1, DX1, DY1, 0); \
+        MTLVC_ADD_VERTEX(TX1, TY1, DX1, DY1, COL); \
+        MTLVC_ADD_VERTEX(TX2, TY1, DX2, DY1, COL); \
+        MTLVC_ADD_VERTEX(TX2, TY2, DX2, DY2, COL); \
+        MTLVC_ADD_VERTEX(TX2, TY2, DX2, DY2, COL); \
+        MTLVC_ADD_VERTEX(TX1, TY2, DX1, DY2, COL); \
+        MTLVC_ADD_VERTEX(TX1, TY1, DX1, DY1, COL); \
     } while (0)
+
+#define RGBA_TO_U4(c)                       \
+{                                           \
+    (unsigned char) (((c) >> 16) & 0xFF),   \
+    (unsigned char) (((c) >> 8) & 0xFF),    \
+    (unsigned char) ((c) & 0xFF),           \
+    (unsigned char) (((c) >> 24) & 0xFF)    \
+}
 
 // Next define should exactly match to the amount
 // of MTLVC_ADD_VERTEX in MTLVC_ADD_TRIANGLES
@@ -76,12 +90,18 @@ MTLVertexCache_InitVertexCache()
 
     if (vertexCache == NULL) {
         J2dTraceLn(J2D_TRACE_INFO, "MTLVertexCache_InitVertexCache : vertexCache == NULL");
-        vertexCache = (J2DVertex *)malloc(MTLVC_MAX_INDEX * sizeof(J2DVertex));
+        unsigned long len = MTLVC_MAX_INDEX * sizeof(J2DVertex);
+
+        if (len > 4096)  {
+            printf("buffer size = %lu > 4 kb !\n", (MTLVC_MAX_INDEX * sizeof(J2DVertex)));
+            return JNI_FALSE;
+        }
+
+        vertexCache = (J2DVertex *)malloc(len);
         if (vertexCache == NULL) {
             return JNI_FALSE;
         }
     }
-
     return JNI_TRUE;
 }
 
@@ -96,7 +116,7 @@ MTLVertexCache_FlushVertexCache(MTLContext *mtlc)
 
         [encoder setFragmentTexture:maskCacheTex.texture atIndex: 0];
         J2dTraceLn1(J2D_TRACE_INFO,
-            "MTLVertexCache_FlushVertexCache : encode %d characters", (vertexCacheIndex / 6));
+            "MTLVertexCache_FlushVertexCache : encode %d tiles", (vertexCacheIndex / 6));
         [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:vertexCacheIndex];
     }
     vertexCacheIndex = 0;
@@ -120,8 +140,10 @@ MTLVertexCache_FlushGlyphVertexCache()
                           atIndex:MeshVertexBuffer];
         id<MTLTexture> glyphCacheTex = MTLTR_GetGlyphCacheTexture();
         [gcEncoder setFragmentTexture:glyphCacheTex atIndex: 0];
+
         J2dTraceLn1(J2D_TRACE_INFO,
             "MTLVertexCache_FlushGlyphVertexCache : encode %d characters", (vertexCacheIndex / 6));
+
         [gcEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:vertexCacheIndex];
     }
     vertexCacheIndex = 0;
@@ -129,14 +151,17 @@ MTLVertexCache_FlushGlyphVertexCache()
 
 void MTLVertexCache_FreeVertexCache()
 {
-    free(vertexCache);
-    vertexCache = NULL;
+    if (vertexCache != NULL) {
+        free(vertexCache);
+        vertexCache = NULL;
+    }    
 }
 
 static jboolean
 MTLVertexCache_InitMaskCache(MTLContext *mtlc) {
     J2dTraceLn(J2D_TRACE_INFO, "MTLVertexCache_InitMaskCache");
-    if (maskCacheTex == NULL) {
+
+    if (maskCacheTex == nil) {
         maskCacheTex = [mtlc.texturePool getTexture:MTLVC_MASK_CACHE_WIDTH_IN_TEXELS
                                              height:MTLVC_MASK_CACHE_HEIGHT_IN_TEXELS
                                              format:MTLPixelFormatA8Unorm];
@@ -145,34 +170,32 @@ MTLVertexCache_InitMaskCache(MTLContext *mtlc) {
             J2dTraceLn(J2D_TRACE_ERROR, "MTLVertexCache_InitMaskCache: can't obtain temporary texture object from pool");
             return JNI_FALSE;
         }
+
+	    // init special fully opaque tile in the upper-right corner of
+	    // the mask cache texture
+	    static char tile[MTLVC_MASK_CACHE_TILE_SIZE];
+	    static char* pTile = NULL;
+	    if (!pTile) {
+	        memset(tile, 0xff, MTLVC_MASK_CACHE_TILE_SIZE);
+	        pTile = tile;
+	    }
+	
+	    jint texx = MTLVC_MASK_CACHE_TILE_WIDTH * (MTLVC_MASK_CACHE_WIDTH_IN_TILES - 1);
+	    jint texy = MTLVC_MASK_CACHE_TILE_HEIGHT * (MTLVC_MASK_CACHE_HEIGHT_IN_TILES - 1);
+	
+	    NSUInteger bytesPerRow = 1 * MTLVC_MASK_CACHE_TILE_WIDTH;
+	
+	    MTLRegion region = {
+	            {texx,  texy,   0},
+	            {MTLVC_MASK_CACHE_TILE_WIDTH, MTLVC_MASK_CACHE_TILE_HEIGHT, 1}
+	    };
+	
+	    // do we really need this??
+	    [maskCacheTex.texture replaceRegion:region
+	                    mipmapLevel:0
+	                      withBytes:tile
+	                    bytesPerRow:bytesPerRow];
     }
-    // init special fully opaque tile in the upper-right corner of
-    // the mask cache texture
-    static char tile[MTLVC_MASK_CACHE_TILE_SIZE];
-    static char* pTile = NULL;
-    if (!pTile) {
-        memset(tile, 0xff, MTLVC_MASK_CACHE_TILE_SIZE);
-        pTile = tile;
-    }
-
-    jint texx = MTLVC_MASK_CACHE_TILE_WIDTH * (MTLVC_MASK_CACHE_WIDTH_IN_TILES - 1);
-
-    jint texy = MTLVC_MASK_CACHE_TILE_HEIGHT * (MTLVC_MASK_CACHE_HEIGHT_IN_TILES - 1);
-
-    NSUInteger bytesPerRow = 1 * MTLVC_MASK_CACHE_TILE_WIDTH;
-
-    MTLRegion region = {
-            {texx,  texy,   0},
-            {MTLVC_MASK_CACHE_TILE_WIDTH, MTLVC_MASK_CACHE_TILE_HEIGHT, 1}
-    };
-
-
-    // do we really need this??
-    [maskCacheTex.texture replaceRegion:region
-                    mipmapLevel:0
-                      withBytes:tile
-                    bytesPerRow:bytesPerRow];
-
     return JNI_TRUE;
 }
 
@@ -181,11 +204,12 @@ MTLVertexCache_EnableMaskCache(MTLContext *mtlc, BMTLSDOps *dstOps)
 {
     J2dTraceLn(J2D_TRACE_INFO, "MTLVertexCache_EnableMaskCache");
 
-    if (!MTLVertexCache_InitVertexCache()) {
-        return;
+    if (vertexCache == NULL) {
+        if (!MTLVertexCache_InitVertexCache()) {
+            return;
+        }
     }
-
-    if (maskCacheTex == NULL) {
+    if (maskCacheTex == nil) {
         if (!MTLVertexCache_InitMaskCache(mtlc)) {
             return;
         }
@@ -200,10 +224,9 @@ MTLVertexCache_DisableMaskCache(MTLContext *mtlc)
     // we will start using DisableMaskCache until then
     // we are force flushing vertexcache.
     J2dTraceLn(J2D_TRACE_INFO, "MTLVertexCache_DisableMaskCache");
+    
     MTLVertexCache_FlushVertexCache(mtlc);
-    maskCacheIndex = 0;
-    free(vertexCache);
-    vertexCache = NULL;
+    MTLVertexCache_FreeVertexCache();
 }
 
 void
@@ -235,9 +258,12 @@ MTLVertexCache_AddMaskQuad(MTLContext *mtlc,
          ((vertexCacheIndex + VERTS_FOR_A_QUAD) >= MTLVC_MAX_INDEX))
     {
         J2dTraceLn2(J2D_TRACE_INFO, "maskCacheIndex = %d, vertexCacheIndex = %d", maskCacheIndex, vertexCacheIndex);
+
         MTLVertexCache_FlushVertexCache(mtlc);
+
+        // Needed to initialize again texture & encoder:
+        // as MTLVertexCache_FlushVertexCache cleared texture, then needed to reinitalize texture & encoder
         MTLVertexCache_EnableMaskCache(mtlc, dstOps);
-        maskCacheIndex = 0;
     }
 
     if (mask != NULL) {
@@ -306,9 +332,21 @@ MTLVertexCache_AddMaskQuad(MTLContext *mtlc,
     dx2 = dx1 + width;
     dy2 = dy1 + height;
 
+    jint col;
+
+    if ([mtlc.paint isKindOfClass:[MTLColorPaint class]]) {
+        MTLColorPaint* cPaint = (MTLColorPaint *) mtlc.paint;
+        col = cPaint.color; // incorrect in Xor mode (as color is modified in TxtUniforms !!
+    } else {
+        col = 0;
+    }
+
+    unsigned char color[4] = RGBA_TO_U4(col);
+
     J2dTraceLn8(J2D_TRACE_INFO, "tx1 = %f ty1 = %f tx2 = %f ty2 = %f dx1 = %f dy1 = %f dx2 = %f dy2 = %f", tx1, ty1, tx2, ty2, dx1, dy1, dx2, dy2);
     MTLVC_ADD_TRIANGLES(tx1, ty1, tx2, ty2,
-                        dx1, dy1, dx2, dy2);
+                        dx1, dy1, dx2, dy2,
+                        color);
 }
 
 void
@@ -326,6 +364,8 @@ MTLVertexCache_AddGlyphQuad(MTLContext *mtlc,
         MTLVertexCache_FlushGlyphVertexCache();
     }
 
+    unsigned char color[4] = {0, 0, 0, 0};
     MTLVC_ADD_TRIANGLES(tx1, ty1, tx2, ty2,
-                        dx1, dy1, dx2, dy2);
+                        dx1, dy1, dx2, dy2,
+                        color);
 }

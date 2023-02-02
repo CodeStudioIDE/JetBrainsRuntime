@@ -36,6 +36,7 @@ struct VertexInput {
 struct TxtVertexInput {
     float2 position [[attribute(VertexAttributePosition)]];
     float2 texCoords [[attribute(VertexAttributeTexPos)]];
+    uchar4 color [[attribute(VertexAttributeColPos)]];
 };
 
 struct AAVertexInput {
@@ -67,6 +68,7 @@ struct TxtShaderInOut {
     float4 position [[position]];
     float2 texCoords;
     float2 tpCoords;
+    float4 color [[flat]];
 };
 
 struct LCDShaderInOut {
@@ -207,6 +209,7 @@ vertex TxtShaderInOut vert_txt(TxtVertexInput in [[stage_in]], constant Transfor
     float4 pos4 = float4(in.position, 0.0, 1.0);
     out.position = transform.transformMatrix*pos4;
     out.texCoords = in.texCoords;
+    out.color = float4(in.color) / 255.0f;
     return out;
 }
 
@@ -309,17 +312,24 @@ fragment half4 frag_txt(
         sampler textureSampler [[sampler(0)]]
 ) {
     float4 pixelColor = renderTexture.sample(textureSampler, vert.texCoords);
-    float srcA = uniforms.isSrcOpaque ? 1 : pixelColor.a;
+    float srcA = uniforms.isSrcOpaque ? 1.0f : pixelColor.a;
     if (uniforms.mode) {
-        float3 c = mix(pixelColor.rgb, uniforms.color.rgb, srcA);
+        float4 in_col = vert.color;
+        float c_a = in_col.a;
+        if (c_a <= 0.0f) {
+            // fallback when vert.color is 0 (undefined)
+            in_col = uniforms.color;
+            c_a = in_col.a;
+        }
+        float3 c = mix(pixelColor.rgb, in_col.rgb, srcA);
         return half4(c.r, c.g, c.b ,
                      (uniforms.isSrcOpaque) ?
-                      uniforms.color.a : pixelColor.a*uniforms.color.a);
+                      c_a : pixelColor.a * c_a);
     }
 
     return half4(pixelColor.r,
                  pixelColor.g,
-                 pixelColor.b, srcA)*uniforms.extraAlpha;
+                 pixelColor.b, srcA) * uniforms.extraAlpha;
 }
 
 fragment half4 frag_text(

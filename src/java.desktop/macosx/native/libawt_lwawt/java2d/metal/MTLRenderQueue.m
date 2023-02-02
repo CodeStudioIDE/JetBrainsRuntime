@@ -56,7 +56,9 @@ void MTLRenderQueue_CheckPreviousOp(jint op) {
     }
 
     if (op == MTL_OP_SET_COLOR) {
-        if (mtlPreviousOp != MTL_OP_MASK_OP) {
+        // LBO: avoid flushing mask cache:
+        // TODO: KILL ONCE VALIDATED
+        if (true || (mtlPreviousOp != MTL_OP_MASK_OP)) {
             return; // SET_COLOR should not cause endEncoder
         }
     } else if (op == MTL_OP_MASK_OP) {
@@ -68,11 +70,12 @@ void MTLRenderQueue_CheckPreviousOp(jint op) {
     J2dTraceLn1(J2D_TRACE_VERBOSE,
                 "MTLRenderQueue_CheckPreviousOp: new op=%d", op);
 
-    switch (mtlPreviousOp) {
+    switch (mtlPreviousOp) {    
         case MTL_OP_INIT :
             mtlPreviousOp = op;
             return;
         case MTL_OP_MASK_OP :
+            // printf("CheckPreviousOp(): DisableMaskCache(mtlc) = %d => op %d\n", mtlPreviousOp, op);        
             MTLVertexCache_DisableMaskCache(mtlc);
             break;
     }
@@ -859,6 +862,7 @@ Java_sun_java2d_metal_MTLRenderQueue_flushBuffer
 
         if (mtlc != NULL) {
             if (mtlPreviousOp == MTL_OP_MASK_OP) {
+                // printf("MTLRenderQueue(): DisableMaskCache(mtlc) = %d\n", mtlPreviousOp);
                 MTLVertexCache_DisableMaskCache(mtlc);
             }
 
